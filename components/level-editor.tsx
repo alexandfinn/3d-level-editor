@@ -7,7 +7,11 @@ import { ObjectLibrary } from "./object-library"
 import { EditorControls } from "./editor-controls"
 import { ObjectList } from "./object-list"
 import { v4 as uuidv4 } from "uuid"
-import type * as THREE from "three"
+import * as THREE from "three"
+import { useGLTF } from "@react-three/drei"
+import { useMemo } from "react"
+import { Box3, Box3Helper } from "three"
+import { useFrame } from "@react-three/fiber"
 
 // Now we only have "model" as the object type
 export type ObjectType = "model"
@@ -28,6 +32,9 @@ export function LevelEditor() {
   const [objects, setObjects] = useState<SceneObject[]>([])
   const [selectedObjectId, setSelectedObjectId] = useState<string | null>(null)
   const [transformMode, setTransformMode] = useState<TransformMode>("translate")
+  const [showBoundingBoxes, setShowBoundingBoxes] = useState(false)
+  const [snapEnabled, setSnapEnabled] = useState(true)  // Default to enabled
+  const [snapThreshold, setSnapThreshold] = useState(0.5)  // Snap distance threshold
 
   const addObject = (type: ObjectType, modelPath?: string) => {
     const newObject: SceneObject = {
@@ -106,13 +113,23 @@ export function LevelEditor() {
             onSelect={setSelectedObjectId}
             onUpdate={updateObject}
             transformMode={transformMode}
+            showBoundingBoxes={showBoundingBoxes}
+            snapEnabled={snapEnabled && showBoundingBoxes}
+            snapThreshold={snapThreshold}
           />
           <OrbitControls makeDefault />
         </Canvas>
 
         {/* Editor controls overlay */}
         <div className="absolute top-4 right-4">
-          <EditorControls transformMode={transformMode} onChangeMode={setTransformMode} />
+          <EditorControls 
+            transformMode={transformMode} 
+            onChangeMode={setTransformMode}
+            showBoundingBoxes={showBoundingBoxes}
+            onToggleBoundingBoxes={() => setShowBoundingBoxes(prev => !prev)}
+            snapEnabled={snapEnabled}
+            onToggleSnap={() => setSnapEnabled(prev => !prev)}
+          />
         </div>
       </div>
 
@@ -135,13 +152,32 @@ function Scene({
   onSelect,
   onUpdate,
   transformMode,
+  showBoundingBoxes,
+  snapEnabled,
+  snapThreshold,
 }: {
   objects: SceneObject[]
   selectedId: string | null
   onSelect: (id: string | null) => void
   onUpdate: (id: string, updates: Partial<SceneObject>) => void
   transformMode: TransformMode
+  showBoundingBoxes: boolean
+  snapEnabled: boolean
+  snapThreshold: number
 }) {
+  const objectBoundingBoxes = useRef<Map<string, Box3>>(new Map());
+
+  // Function to get all objects' bounding boxes except the selected one
+  const getOtherBoundingBoxes = (selectedId: string | null) => {
+    const boxes: Box3[] = [];
+    objectBoundingBoxes.current.forEach((box, id) => {
+      if (id !== selectedId) {
+        boxes.push(box.clone()); // Clone to avoid modifying the original
+      }
+    });
+    return boxes;
+  };
+
   return (
     <>
       {objects.map((object) => (
@@ -152,6 +188,11 @@ function Scene({
           onClick={() => onSelect(object.id)}
           onUpdate={onUpdate}
           transformMode={transformMode}
+          showBoundingBoxes={showBoundingBoxes}
+          snapEnabled={snapEnabled}
+          snapThreshold={snapThreshold}
+          objectBoundingBoxes={objectBoundingBoxes}
+          getOtherBoundingBoxes={() => getOtherBoundingBoxes(object.id)}
         />
       ))}
     </>
@@ -164,45 +205,120 @@ function ModelObject({
   onClick,
   onUpdate,
   transformMode,
+  showBoundingBoxes,
+  snapEnabled,
+  snapThreshold,
+  objectBoundingBoxes,
+  getOtherBoundingBoxes,
 }: {
   object: SceneObject
   isSelected: boolean
   onClick: () => void
   onUpdate: (id: string, updates: Partial<SceneObject>) => void
   transformMode: TransformMode
+  showBoundingBoxes: boolean
+  snapEnabled: boolean
+  snapThreshold: number
+  objectBoundingBoxes: React.RefObject<Map<string, Box3>>
+  getOtherBoundingBoxes: () => Box3[]
 }) {
   const { scene } = useGLTF(object.modelPath || "/models/model.glb")
   const modelRef = useRef<THREE.Group>(null)
+  const boundingBoxRef = useRef<THREE.Box3Helper>(null)
   const [isModelReady, setIsModelReady] = useState(false)
+  const [boundingBox, setBoundingBox] = useState<Box3 | null>(null)
 
   // Clone the scene to avoid sharing issues
   const clonedScene = useMemo(() => {
     return scene.clone()
   }, [scene])
 
-  // Set up the ref and mark as ready when the model is loaded
-  useEffect(() => {
-    if (modelRef.current) {
-      setIsModelReady(true)
-    }
-  }, [modelRef.current])
-
-  // Enforce groundLevel constraint
-  useEffect(() => {
-    if (object.groundLevel && modelRef.current) {
-      const currentPosition = modelRef.current.position.toArray()
-      if (currentPosition[1] !== 0) {
-        modelRef.current.position.setY(0)
-        onUpdate(object.id, {
-          position: [currentPosition[0], 0, currentPosition[2]] as [number, number, number],
-        })
+  // Update bounding box on each frame when visible and store it in the ref map
+  useFrame(() => {
+    if (modelRef.current && boundingBox) {
+      boundingBox.setFromObject(modelRef.current);
+      
+      // Store the bounding box in the scene-level map
+      if (objectBoundingBoxes.current) {
+        objectBoundingBoxes.current.set(object.id, boundingBox);
+      }
+      
+      // Apply snapping while dragging if enabled and object is selected
+      if (snapEnabled && isSelected && transformMode === "translate") {
+        trySnap();
       }
     }
-  }, [object.groundLevel, modelRef.current, object.id, onUpdate])
+  })
 
+  // Try to snap the current object to other objects' bounding boxes
+  const trySnap = () => {
+    if (!modelRef.current || !boundingBox) return;
+    
+    const otherBoxes = getOtherBoundingBoxes();
+    if (otherBoxes.length === 0) return;
+    
+    const currentBox = boundingBox.clone();
+    const currentPosition = modelRef.current.position.clone();
+    let snapApplied = false;
+    
+    // Extract min and max points for current box
+    const currentMin = currentBox.min;
+    const currentMax = currentBox.max;
+    
+    // For each other box, check if we should snap to it
+    for (const otherBox of otherBoxes) {
+      const otherMin = otherBox.min;
+      const otherMax = otherBox.max;
+      
+      // Check each axis (x, y, z) for potential snapping
+      const axes = [0, 1, 2]; // x, y, z
+      
+      for (const axis of axes) {
+        // Skip Y axis if groundLevel is true
+        if (axis === 1 && object.groundLevel) continue;
+        
+        // Check if right side of current box is close to left side of other box
+        if (Math.abs(currentMax.getComponent(axis) - otherMin.getComponent(axis)) <= snapThreshold) {
+          // Snap right side to left side
+          const snapOffset = otherMin.getComponent(axis) - currentMax.getComponent(axis);
+          currentPosition.setComponent(axis, currentPosition.getComponent(axis) + snapOffset);
+          snapApplied = true;
+          break;
+        }
+        
+        // Check if left side of current box is close to right side of other box
+        if (Math.abs(currentMin.getComponent(axis) - otherMax.getComponent(axis)) <= snapThreshold) {
+          // Snap left side to right side
+          const snapOffset = otherMax.getComponent(axis) - currentMin.getComponent(axis);
+          currentPosition.setComponent(axis, currentPosition.getComponent(axis) + snapOffset);
+          snapApplied = true;
+          break;
+        }
+      }
+      
+      if (snapApplied) break; // Exit after first snap is applied
+    }
+    
+    // If we snapped, update the model position
+    if (snapApplied) {
+      modelRef.current.position.copy(currentPosition);
+      if (object.groundLevel) {
+        modelRef.current.position.setY(0); // Ensure Y=0 for ground level objects
+      }
+    }
+  }
+
+  // Trigger position update after transformation with snapping
   const handleTransform = () => {
     if (modelRef.current) {
       let position = modelRef.current.position.toArray() as [number, number, number]
+
+      // Apply final snap when releasing the control
+      if (snapEnabled && showBoundingBoxes) {
+        trySnap();
+        // Update position after snapping
+        position = modelRef.current.position.toArray() as [number, number, number]
+      }
 
       // Enforce groundLevel constraint
       if (object.groundLevel) {
@@ -221,6 +337,40 @@ function ModelObject({
       onUpdate(object.id, { position, rotation, scale })
     }
   }
+
+  // Calculate initial bounding box when model is ready
+  useEffect(() => {
+    if (modelRef.current) {
+      const box = new Box3().setFromObject(modelRef.current)
+      setBoundingBox(box)
+      setIsModelReady(true)
+      
+      // Initialize the box in the ref map
+      if (objectBoundingBoxes.current) {
+        objectBoundingBoxes.current.set(object.id, box);
+      }
+    }
+    
+    // Cleanup when component unmounts
+    return () => {
+      if (objectBoundingBoxes.current) {
+        objectBoundingBoxes.current.delete(object.id);
+      }
+    };
+  }, [modelRef.current, object.id, objectBoundingBoxes]);
+
+  // Enforce groundLevel constraint
+  useEffect(() => {
+    if (object.groundLevel && modelRef.current) {
+      const currentPosition = modelRef.current.position.toArray()
+      if (currentPosition[1] !== 0) {
+        modelRef.current.position.setY(0)
+        onUpdate(object.id, {
+          position: [currentPosition[0], 0, currentPosition[2]] as [number, number, number],
+        })
+      }
+    }
+  }, [object.groundLevel, modelRef.current, object.id, onUpdate]);
 
   // Calculate the actual position, enforcing groundLevel if needed
   const actualPosition: [number, number, number] = object.groundLevel
@@ -242,12 +392,15 @@ function ModelObject({
         <primitive object={clonedScene} />
       </group>
 
+      {showBoundingBoxes && boundingBox && (
+        <primitive object={new THREE.Box3Helper(boundingBox, 0x00ff00)} />
+      )}
+
       {isSelected && isModelReady && modelRef.current && (
         <TransformControls
-          object={modelRef}
+          object={modelRef.current}
           mode={transformMode}
           onMouseUp={handleTransform}
-          // Disable the Y axis control when groundLevel is true and in translate mode
           showY={!(object.groundLevel && transformMode === "translate")}
         />
       )}
@@ -423,8 +576,4 @@ function ObjectProperties({
     </div>
   )
 }
-
-// Import these at the top of the file
-import { useGLTF } from "@react-three/drei"
-import { useMemo } from "react"
 

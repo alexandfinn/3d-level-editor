@@ -4,14 +4,22 @@ import type React from "react"
 
 import { Button } from "@/components/ui/button"
 import type { TransformMode } from "./level-editor"
-import { Move, RotateCcw, Maximize } from "lucide-react"
+import { Move, RotateCcw, Maximize, Box, Magnet } from "lucide-react"
 
 export function EditorControls({
   transformMode,
   onChangeMode,
+  showBoundingBoxes,
+  onToggleBoundingBoxes,
+  snapEnabled,
+  onToggleSnap,
 }: {
   transformMode: TransformMode
   onChangeMode: (mode: TransformMode) => void
+  showBoundingBoxes: boolean
+  onToggleBoundingBoxes: () => void
+  snapEnabled: boolean
+  onToggleSnap: () => void
 }) {
   const controls: { mode: TransformMode; icon: React.ReactNode; label: string }[] = [
     { mode: "translate", icon: <Move className="h-4 w-4" />, label: "Move" },
@@ -25,7 +33,7 @@ export function EditorControls({
         {controls.map((control) => (
           <Button
             key={control.mode}
-            className={transformMode === control.mode ? "border border-white" : ""}
+            variant={transformMode === control.mode ? "secondary" : "default"}
             size="sm"
             onClick={() => onChangeMode(control.mode)}
             title={control.label}
@@ -34,6 +42,25 @@ export function EditorControls({
             <span className="ml-1">{control.label}</span>
           </Button>
         ))}
+        <Button
+          variant={showBoundingBoxes ? "secondary" : "default"}
+          size="sm"
+          onClick={onToggleBoundingBoxes}
+          title="Toggle Bounding Boxes"
+        >
+          <Box className="h-4 w-4" />
+          <span className="ml-1">Bounds</span>
+        </Button>
+        <Button
+          variant={snapEnabled ? "secondary" : "default"}
+          size="sm"
+          onClick={onToggleSnap}
+          title="Toggle Snapping"
+          disabled={!showBoundingBoxes}
+        >
+          <Magnet className="h-4 w-4" />
+          <span className="ml-1">Snap</span>
+        </Button>
       </div>
     </div>
   )
