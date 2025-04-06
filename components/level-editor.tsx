@@ -36,6 +36,23 @@ export function LevelEditor() {
   const [snapEnabled, setSnapEnabled] = useState(true)  // Default to enabled
   const [snapThreshold, setSnapThreshold] = useState(0.5)  // Snap distance threshold
 
+  // Load objects from localStorage on component mount
+  useEffect(() => {
+    const savedObjects = localStorage.getItem('levelEditorObjects')
+    if (savedObjects) {
+      try {
+        setObjects(JSON.parse(savedObjects))
+      } catch (error) {
+        console.error('Failed to parse saved objects:', error)
+      }
+    }
+  }, [])
+
+  // Save objects to localStorage whenever they change
+  useEffect(() => {
+    localStorage.setItem('levelEditorObjects', JSON.stringify(objects))
+  }, [objects])
+
   const addObject = (type: ObjectType, modelPath?: string) => {
     const newObject: SceneObject = {
       id: uuidv4(),
@@ -73,6 +90,17 @@ export function LevelEditor() {
     setObjects((prev) => prev.filter((obj) => obj.id !== id))
     if (selectedObjectId === id) {
       setSelectedObjectId(null)
+    }
+  }
+
+  const resetScene = () => {
+    if (confirm('Are you sure you want to reset the scene? This will delete all objects.')) {
+      // Clear the objects state
+      setObjects([])
+      // Clear the selected object
+      setSelectedObjectId(null)
+      // Clear localStorage
+      localStorage.removeItem('levelEditorObjects')
     }
   }
 
@@ -129,6 +157,7 @@ export function LevelEditor() {
             onToggleBoundingBoxes={() => setShowBoundingBoxes(prev => !prev)}
             snapEnabled={snapEnabled}
             onToggleSnap={() => setSnapEnabled(prev => !prev)}
+            onReset={resetScene}
           />
         </div>
       </div>

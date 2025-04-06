@@ -4,7 +4,7 @@ import type React from "react"
 
 import { Button } from "@/components/ui/button"
 import type { TransformMode } from "./level-editor"
-import { Move, RotateCcw, Maximize, Box, Magnet } from "lucide-react"
+import { Move, RotateCcw, Maximize, Box, Magnet, Trash2 } from "lucide-react"
 
 export function EditorControls({
   transformMode,
@@ -13,6 +13,7 @@ export function EditorControls({
   onToggleBoundingBoxes,
   snapEnabled,
   onToggleSnap,
+  onReset,
 }: {
   transformMode: TransformMode
   onChangeMode: (mode: TransformMode) => void
@@ -20,6 +21,7 @@ export function EditorControls({
   onToggleBoundingBoxes: () => void
   snapEnabled: boolean
   onToggleSnap: () => void
+  onReset: () => void
 }) {
   const controls: { mode: TransformMode; icon: React.ReactNode; label: string }[] = [
     { mode: "translate", icon: <Move className="h-4 w-4" />, label: "Move" },
@@ -60,6 +62,15 @@ export function EditorControls({
         >
           <Magnet className="h-4 w-4" />
           <span className="ml-1">Snap</span>
+        </Button>
+        <Button
+          variant="destructive"
+          size="sm"
+          onClick={onReset}
+          title="Reset Scene"
+        >
+          <Trash2 className="h-4 w-4" />
+          <span className="ml-1">Reset</span>
         </Button>
       </div>
     </div>
