@@ -1,5 +1,5 @@
 import * as THREE from 'three';
-import { GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader';
+import { GLTF, GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader.js';
 
 class ThumbnailGenerator {
   private canvas: HTMLCanvasElement;
@@ -8,6 +8,7 @@ class ThumbnailGenerator {
   private camera: THREE.PerspectiveCamera;
   private thumbnailCache: Map<string, string>;
   private size: number;
+  private lights: THREE.Light[];
 
   constructor(size: number = 60) {
     if (typeof window === 'undefined') {
@@ -34,11 +35,15 @@ class ThumbnailGenerator {
     this.camera.position.set(3, 3, 3);
     this.camera.lookAt(0, 0, 0);
     
-    // Add lights
+    // Setup lights
+    this.lights = [];
     const ambientLight = new THREE.AmbientLight(0xffffff, 0.5);
     const directionalLight = new THREE.DirectionalLight(0xffffff, 5);
     directionalLight.position.set(10, 10, 10);
-    this.scene.add(ambientLight, directionalLight);
+    this.lights.push(ambientLight, directionalLight);
+    
+    // Add lights to scene
+    this.scene.add(...this.lights);
     
     this.thumbnailCache = new Map();
   }
@@ -55,6 +60,24 @@ class ThumbnailGenerator {
     model.scale.set(scale, scale, scale);
   }
 
+  private clearScene() {
+    // Remove everything except lights
+    const objectsToRemove = this.scene.children.filter(
+      child => !this.lights.includes(child as THREE.Light)
+    );
+    objectsToRemove.forEach(obj => {
+      this.scene.remove(obj);
+      if (obj instanceof THREE.Mesh) {
+        obj.geometry.dispose();
+        if (obj.material instanceof THREE.Material) {
+          obj.material.dispose();
+        } else if (Array.isArray(obj.material)) {
+          obj.material.forEach(material => material.dispose());
+        }
+      }
+    });
+  }
+
   async generateThumbnail(modelPath: string): Promise<string> {
     const cacheKey = `${modelPath}-${this.size}`;
     // Check cache first
@@ -67,12 +90,10 @@ class ThumbnailGenerator {
       
       loader.load(
         modelPath,
-        (gltf) => {
+        (gltf: GLTF) => {
           try {
             // Clear previous scene content
-            while(this.scene.children.length > 2) { // Keep lights
-              this.scene.remove(this.scene.children[0]);
-            }
+            this.clearScene();
             
             const model = gltf.scene.clone();
             this.centerAndScaleModel(model);
@@ -91,12 +112,19 @@ class ThumbnailGenerator {
           }
         },
         undefined,
-        (error) => reject(error)
+        (error: unknown) => reject(error)
       );
     });
   }
 
   dispose() {
+    this.clearScene();
+    this.lights.forEach(light => {
+      if (light.parent) {
+        light.parent.remove(light);
+      }
+    });
+    this.lights = [];
     this.renderer.dispose();
     this.thumbnailCache.clear();
   }

@@ -1,8 +1,8 @@
-"use client"
+"use client";
 
-import { useEffect, useState } from "react"
-import { Button } from "@/components/ui/button"
-import { ModelThumbnail } from "./model-thumbnail"
+import { useEffect, useState } from "react";
+import { Button } from "@/components/ui/button";
+import { ModelThumbnail } from "./model-thumbnail";
 
 // This is our model registry - add new models here
 const availableModels = [
@@ -19,26 +19,26 @@ const availableModels = [
     path: "/models/Table_Small.glb",
   },
   // Add more models here as you add them to the public/models directory
-]
+];
 
 export function ModelsLibrary({
   onAddModel,
 }: {
-  onAddModel: (modelPath: string) => void
+  onAddModel: (modelPath: string) => void;
 }) {
-  const [models, setModels] = useState<{ name: string; path: string }[]>([])
+  const [models, setModels] = useState<{ name: string; path: string }[]>([]);
 
   useEffect(() => {
     // Fetch the list of models from the API endpoint
-    fetch('/api/models')
-      .then(response => response.json())
-      .then(data => {
-        setModels(data)
+    fetch("/api/models")
+      .then((response) => response.json())
+      .then((data) => {
+        setModels(data);
       })
-      .catch(error => {
-        console.error('Failed to load models:', error)
-      })
-  }, [])
+      .catch((error) => {
+        console.error("Failed to load models:", error);
+      });
+  }, []);
 
   return (
     <div className="grid grid-cols-2 gap-2">
@@ -46,16 +46,15 @@ export function ModelsLibrary({
         <Button
           key={model.path}
           variant="outline"
-          className="flex flex-col items-center justify-center h-24 bg-gray-800 hover:bg-gray-700 text-white"
+          className="flex flex-col items-center justify-center h-24 bg-gray-800 hover:bg-gray-700 text-white p-0"
           onClick={() => onAddModel(model.path)}
         >
-          <div className="mb-2">
-            <ModelThumbnail modelPath={model.path} />
-          </div>
-          <span className="text-xs">{model.name}</span>
+          <ModelThumbnail modelPath={model.path} />
+          <span className="text-xs truncate w-full text-center overflow-hidden text-ellipsis">
+            {model.name.replace("Dungeon", "Dng")}
+          </span>
         </Button>
       ))}
     </div>
-  )
+  );
 }
-
