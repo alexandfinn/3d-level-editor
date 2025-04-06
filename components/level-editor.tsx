@@ -74,7 +74,7 @@ export function LevelEditor() {
   return (
     <div className="flex h-screen bg-gray-900 text-white">
       {/* Left sidebar */}
-      <div className="w-64 p-4 border-r border-gray-700 flex flex-col">
+      <div className="w-64 min-w-64 flex-shrink-0 p-4 border-r border-gray-700 flex flex-col">
         <h2 className="text-xl font-bold mb-4">3D Level Editor</h2>
         <ObjectLibrary onAddObject={addObject} />
         <div className="mt-4">
@@ -99,7 +99,7 @@ export function LevelEditor() {
             shadow-mapSize-width={2048}
             shadow-mapSize-height={2048}
           />
-          <Grid infiniteGrid cellSize={1} sectionSize={3} fadeDistance={30} fadeStrength={1.5} />
+          <Grid infiniteGrid cellSize={2} sectionSize={3} fadeDistance={30} fadeStrength={1.5} />
           <Scene
             objects={objects}
             selectedId={selectedObjectId}
@@ -117,12 +117,14 @@ export function LevelEditor() {
       </div>
 
       {/* Right sidebar - Properties panel */}
-      {selectedObject && (
-        <div className="w-64 p-4 border-l border-gray-700">
-          <h3 className="text-lg font-semibold mb-4">Properties</h3>
-          <ObjectProperties object={selectedObject} onUpdate={(updates) => updateObject(selectedObject.id, updates)} />
-        </div>
-      )}
+      <div className={`w-64 min-w-64 flex-shrink-0 border-l border-gray-700 transition-all duration-200 ${selectedObject ? 'p-4' : 'w-0 min-w-0 opacity-0'}`}>
+        {selectedObject && (
+          <>
+            <h3 className="text-lg font-semibold mb-4">Properties</h3>
+            <ObjectProperties object={selectedObject} onUpdate={(updates) => updateObject(selectedObject.id, updates)} />
+          </>
+        )}
+      </div>
     </div>
   )
 }

@@ -1,51 +1,65 @@
 "use client"
 
-import { useRef, useEffect } from "react"
-import { Canvas } from "@react-three/fiber"
-import { useGLTF } from "@react-three/drei"
-import * as THREE from "three"
+import { useState, useEffect } from "react"
+import { getThumbnailGenerator } from "../utils/thumbnail-generator"
 
 export function ModelThumbnail({ modelPath, size = 60 }: { modelPath: string; size?: number }) {
+  const [thumbnailUrl, setThumbnailUrl] = useState<string>("")
+  const [error, setError] = useState<string>("")
+
+  useEffect(() => {
+    let isMounted = true;
+
+    const generateThumbnail = async () => {
+      try {
+        const generator = getThumbnailGenerator(size);
+        const thumbnail = await generator.generateThumbnail(modelPath);
+        if (isMounted) {
+          setThumbnailUrl(thumbnail);
+        }
+      } catch (err) {
+        console.error('Failed to generate thumbnail:', err);
+        if (isMounted) {
+          setError('Failed to load thumbnail');
+        }
+      }
+    };
+
+    generateThumbnail();
+
+    return () => {
+      isMounted = false;
+    };
+  }, [modelPath, size]);
+
+  if (error) {
+    return (
+      <div 
+        style={{ width: size, height: size }} 
+        className="bg-gray-900 rounded-md overflow-hidden flex items-center justify-center"
+      >
+        <div className="text-red-500 text-xs text-center px-2">
+          {error}
+        </div>
+      </div>
+    );
+  }
+
   return (
     <div style={{ width: size, height: size }} className="bg-gray-900 rounded-md overflow-hidden">
-      <Canvas shadows camera={{ position: [3, 3, 3], fov: 40 }}>
-        <ambientLight intensity={0.5} />
-        <directionalLight position={[10, 10, 10]} intensity={5} />
-        <ThumbnailModel modelPath={modelPath} />
-      </Canvas>
+      {thumbnailUrl ? (
+        <img 
+          src={thumbnailUrl} 
+          alt="Model thumbnail" 
+          style={{ width: '100%', height: '100%', objectFit: 'contain' }}
+          className="bg-transparent"
+        />
+      ) : (
+        <div className="w-full h-full flex items-center justify-center">
+          <div className="animate-spin rounded-full h-6 w-6 border-b-2 border-white"></div>
+        </div>
+      )}
     </div>
-  )
-}
-
-function ThumbnailModel({ modelPath }: { modelPath: string }) {
-  const { scene } = useGLTF(modelPath)
-  const modelRef = useRef<THREE.Group>(null)
-
-  // Center and scale the model to fit the thumbnail
-  useEffect(() => {
-    if (modelRef.current) {
-      // Create a bounding box for the model
-      const box = new THREE.Box3().setFromObject(modelRef.current)
-      const center = box.getCenter(new THREE.Vector3())
-      const size = box.getSize(new THREE.Vector3())
-
-      // Calculate the scale to fit the model in the view
-      const maxDim = Math.max(size.x, size.y, size.z)
-      const scale = 1.5 / maxDim
-
-      // Apply transformations
-      modelRef.current.position.set(-center.x, -center.y, -center.z)
-      modelRef.current.scale.set(scale, scale, scale)
-    }
-  }, [modelRef.current])
-
-  // Clone the scene to avoid sharing issues
-  const clonedScene = scene.clone()
-
-  return (
-    <group ref={modelRef}>
-      <primitive object={clonedScene} />
-    </group>
   )
 }
 
