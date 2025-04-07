@@ -1,6 +1,8 @@
 import bpy
 import os
 from pathlib import Path
+import bmesh
+from mathutils import Vector
 
 # === SETTINGS ===
 export_folder = str(Path.home() / "Downloads")
@@ -11,44 +13,38 @@ selected_objects = [obj for obj in bpy.context.selected_objects if obj.type == '
 if not selected_objects:
     raise Exception("No mesh objects selected!")
 
-# Store all original objects for later restoration
-original_states = []
+# Store original selection and active object
+original_selected_objects = [obj for obj in bpy.context.selected_objects]
+original_active_object = bpy.context.view_layer.objects.active
 
 # Loop through all selected objects
 for obj in selected_objects:
-    # === Store original location ===
-    original_states.append({
-        'object': obj,
-        'location': obj.location.copy(),
-        'rotation': obj.rotation_euler.copy(),
-        'scale': obj.scale.copy()
-    })
-    
     # === Make sure only this object is selected and active ===
     bpy.ops.object.select_all(action='DESELECT')
     obj.select_set(True)
     bpy.context.view_layer.objects.active = obj
     
-    # === Move origin to bottom center ===
-    # First set origin to geometry center
-    bpy.ops.object.origin_set(type='ORIGIN_GEOMETRY', center='BOUNDS')
+    # === Create a duplicate for export ===
+    bpy.ops.object.duplicate()
+    temp_obj = bpy.context.view_layer.objects.active
     
-    # Get the dimensions and create cursor position at bottom center
-    dimensions = obj.dimensions
-    bpy.context.scene.cursor.location = (
-        obj.location.x,
-        obj.location.y,
-        obj.location.z - dimensions.z/2
-    )
+    # === Calculate the bounding box to find center on XY plane ===
+    # Get the object's bounding box in world space
+    bbox_corners = [temp_obj.matrix_world @ Vector(corner) for corner in temp_obj.bound_box]
     
-    # Set origin to 3D cursor (which is at bottom center)
-    bpy.ops.object.origin_set(type='ORIGIN_CURSOR')
+    # Calculate center of bounding box
+    bbox_center = sum((Vector(corner) for corner in bbox_corners), Vector()) / 8
     
-    # Move object to world origin for X and Y only
-    obj.location = (0, 0, 0)
-    obj.rotation_euler = (0, 0, 0)
+    # We only want to center on X and Y axes, preserve Z
+    original_z = temp_obj.location.z
+    offset_x = -bbox_center.x
+    offset_y = -bbox_center.y
     
-    # Apply transforms to make sure everything is clean
+    # Apply the centering offset
+    temp_obj.location.x += offset_x
+    temp_obj.location.y += offset_y
+    
+    # === Apply all transformations to the duplicate ===
     bpy.ops.object.transform_apply(location=True, rotation=True, scale=True)
     
     # === Export path ===
@@ -60,20 +56,24 @@ for obj in selected_objects:
         filepath=export_path,
         use_selection=True,
         export_format='GLB',
-        export_apply=True
+        export_apply=False,
+        export_yup=True,
+        export_texcoords=True,
+        export_normals=True,
+        export_current_frame=True,
+        export_animations=False
     )
     
     print(f"✅ Exported {obj.name} to: {export_path}")
+    
+    # === Delete the temporary object ===
+    bpy.ops.object.delete()
 
-# === Restore original transforms for all objects ===
-for state in original_states:
-    obj = state['object']
-    obj.location = state['location']
-    obj.rotation_euler = state['rotation']
-    obj.scale = state['scale']
-
-# Re-select all objects that were originally selected
-for state in original_states:
-    state['object'].select_set(True)
+# Restore original selection
+bpy.ops.object.select_all(action='DESELECT')
+for obj in original_selected_objects:
+    obj.select_set(True)
+if original_active_object:
+    bpy.context.view_layer.objects.active = original_active_object
 
 print(f"✅ Exported {len(selected_objects)} objects to: {export_folder}")
