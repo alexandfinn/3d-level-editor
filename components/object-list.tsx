@@ -34,7 +34,7 @@ export function ObjectList({
             <div className="mr-2 flex-shrink-0" style={{ width: 24, height: 24 }}>
               <ModelThumbnail modelPath={obj.modelPath || "/models/model.glb"} size={24} />
             </div>
-            <span>Model {index + 1}</span>
+            <span>{obj.name}</span>
           </div>
           <Button
             variant="ghost"
