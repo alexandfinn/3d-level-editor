@@ -38,68 +38,183 @@ function WASDControls({ moveSpeed = 0.1 }) {
     a: false,
     s: false,
     d: false,
+    q: false,
+    e: false,
   });
+  const mouseState = useRef({
+    isAltDown: false,
+    isDragging: false,
+    lastX: 0,
+    lastY: 0,
+  });
+
+  // Function to adjust camera pitch based on height
+  const adjustCameraPitch = useCallback(() => {
+    const minHeight = 2; // At this height, camera is parallel to ground (90 degrees)
+    const maxHeight = 12; // At this height, camera looks down at 45 degrees
+    const minPitch = -Math.PI / 16; // 90 degrees in radians (parallel to ground)
+    const maxPitch = -Math.PI / 4; // 45 degrees in radians (looking down)
+
+    // Get current height
+    const currentHeight = camera.position.y;
+
+    // Calculate interpolation factor (0 to 1)
+    const t = Math.max(
+      0,
+      Math.min(1, (currentHeight - minHeight) / (maxHeight - minHeight))
+    );
+
+    // Interpolate between min and max pitch
+    const targetPitch = minPitch - t * (minPitch - maxPitch);
+
+    // Extract current camera orientation
+    const currentRotation = new THREE.Euler().setFromQuaternion(
+      camera.quaternion,
+      "YXZ"
+    );
+    const yaw = currentRotation.y; // Preserve current yaw (left/right rotation)
+
+    // Create new quaternion from updated euler angles
+    const newQuaternion = new THREE.Quaternion();
+    newQuaternion.setFromEuler(new THREE.Euler(targetPitch, yaw, 0, "YXZ"));
+
+    // Apply the new orientation
+    camera.quaternion.copy(newQuaternion);
+  }, [camera]);
 
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
       // Skip if an input element is focused
-      if (document.activeElement instanceof HTMLInputElement || 
-          document.activeElement instanceof HTMLTextAreaElement ||
-          document.activeElement instanceof HTMLSelectElement) {
+      if (
+        document.activeElement instanceof HTMLInputElement ||
+        document.activeElement instanceof HTMLTextAreaElement ||
+        document.activeElement instanceof HTMLSelectElement
+      ) {
         return;
       }
-      
-      // Only handle WASD keys
-      if (e.key.toLowerCase() === 'w' || 
-          e.key.toLowerCase() === 'a' || 
-          e.key.toLowerCase() === 's' || 
-          e.key.toLowerCase() === 'd') {
+
+      // Handle WASD and Q/E keys
+      if (["w", "a", "s", "d", "q", "e"].includes(e.key.toLowerCase())) {
         keys.current[e.key.toLowerCase()] = true;
+      }
+
+      // Check for Alt/Option key (both keyCode 18 and key 'Alt')
+      if (e.key === "Alt" || e.keyCode === 18) {
+        mouseState.current.isAltDown = true;
       }
     };
 
     const handleKeyUp = (e: KeyboardEvent) => {
-      // Only handle WASD keys
-      if (e.key.toLowerCase() === 'w' || 
-          e.key.toLowerCase() === 'a' || 
-          e.key.toLowerCase() === 's' || 
-          e.key.toLowerCase() === 'd') {
+      // Handle WASD and Q/E keys
+      if (["w", "a", "s", "d", "q", "e"].includes(e.key.toLowerCase())) {
         keys.current[e.key.toLowerCase()] = false;
+      }
+
+      // Check for Alt/Option key release
+      if (e.key === "Alt" || e.keyCode === 18) {
+        mouseState.current.isAltDown = false;
       }
     };
 
-    window.addEventListener('keydown', handleKeyDown);
-    window.addEventListener('keyup', handleKeyUp);
+    const handleMouseDown = (e: MouseEvent) => {
+      if (mouseState.current.isAltDown) {
+        mouseState.current.isDragging = true;
+        mouseState.current.lastX = e.clientX;
+        mouseState.current.lastY = e.clientY;
+      }
+    };
+
+    const handleMouseMove = (e: MouseEvent) => {
+      if (mouseState.current.isDragging && mouseState.current.isAltDown) {
+        // Calculate mouse movement delta
+        const deltaX = e.clientX - mouseState.current.lastX;
+
+        // Rotate camera around world Y axis based on horizontal mouse movement
+        if (deltaX !== 0) {
+          // Convert delta to radians and apply rotation around world Y axis
+          const rotationAngle = deltaX * 0.01; // Adjust sensitivity as needed
+
+          // Create a rotation quaternion around world Y axis
+          const rotationQuaternion = new THREE.Quaternion();
+          rotationQuaternion.setFromAxisAngle(
+            new THREE.Vector3(0, 1, 0),
+            -rotationAngle
+          );
+
+          // Only rotate the camera's orientation, not its position
+          // This makes the camera rotate in place around itself
+          camera.quaternion.premultiply(rotationQuaternion);
+        }
+
+        // Update last mouse position
+        mouseState.current.lastX = e.clientX;
+        mouseState.current.lastY = e.clientY;
+      }
+    };
+
+    const handleMouseUp = () => {
+      mouseState.current.isDragging = false;
+    };
+
+    // Handle Alt key edge cases
+    const handleBlur = () => {
+      mouseState.current.isAltDown = false;
+      mouseState.current.isDragging = false;
+    };
+
+    window.addEventListener("keydown", handleKeyDown);
+    window.addEventListener("keyup", handleKeyUp);
+    window.addEventListener("mousedown", handleMouseDown);
+    window.addEventListener("mousemove", handleMouseMove);
+    window.addEventListener("mouseup", handleMouseUp);
+    window.addEventListener("blur", handleBlur);
 
     return () => {
-      window.removeEventListener('keydown', handleKeyDown);
-      window.removeEventListener('keyup', handleKeyUp);
+      window.removeEventListener("keydown", handleKeyDown);
+      window.removeEventListener("keyup", handleKeyUp);
+      window.removeEventListener("mousedown", handleMouseDown);
+      window.removeEventListener("mousemove", handleMouseMove);
+      window.removeEventListener("mouseup", handleMouseUp);
+      window.removeEventListener("blur", handleBlur);
     };
-  }, []);
+  }, [camera]);
 
   useFrame(() => {
-    // Get camera forward direction (excluding y component for horizontal movement)
+    // Create camera-relative directions but projected onto XZ plane
     const forward = new Vector3(0, 0, -1).applyQuaternion(camera.quaternion);
-    forward.y = 0;
-    forward.normalize();
+    forward.y = 0; // Project onto XZ plane
+    forward.normalize(); // Normalize after projecting
 
-    // Get camera right direction
     const right = new Vector3(1, 0, 0).applyQuaternion(camera.quaternion);
-    right.y = 0;
-    right.normalize();
+    right.y = 0; // Project onto XZ plane
+    right.normalize(); // Normalize after projecting
+
+    // For up/down movement, use world up
+    const up = new Vector3(0, 1, 0);
 
     // Apply movement based on keys pressed
     const moveVector = new Vector3(0, 0, 0);
 
-    if (keys.current.w) moveVector.add(forward.clone().multiplyScalar(moveSpeed));
-    if (keys.current.s) moveVector.add(forward.clone().multiplyScalar(-moveSpeed));
-    if (keys.current.a) moveVector.add(right.clone().multiplyScalar(-moveSpeed));
+    if (keys.current.w)
+      moveVector.add(forward.clone().multiplyScalar(moveSpeed));
+    if (keys.current.s)
+      moveVector.add(forward.clone().multiplyScalar(-moveSpeed));
+    if (keys.current.a)
+      moveVector.add(right.clone().multiplyScalar(-moveSpeed));
     if (keys.current.d) moveVector.add(right.clone().multiplyScalar(moveSpeed));
+    if (keys.current.q) moveVector.add(up.clone().multiplyScalar(-moveSpeed));
+    if (keys.current.e) moveVector.add(up.clone().multiplyScalar(moveSpeed));
 
     // Update camera position
     if (moveVector.length() > 0) {
       camera.position.add(moveVector);
+
+      // After updating position, adjust the camera pitch based on height
+      adjustCameraPitch();
     }
+
+    // Also check for height changes that might not be from key movement (e.g., orbit controls)
+    adjustCameraPitch();
   });
 
   return null;
@@ -120,7 +235,7 @@ export function LevelEditor() {
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
       // Check for Cmd+S (Mac) or Ctrl+S (Windows)
-      if ((e.metaKey || e.ctrlKey) && e.key === 's') {
+      if ((e.metaKey || e.ctrlKey) && e.key === "s") {
         e.preventDefault();
         // Create a JSON string of the scene data
         const sceneData = {
@@ -128,13 +243,13 @@ export function LevelEditor() {
           timestamp: new Date().toISOString(),
         };
         const jsonString = JSON.stringify(sceneData, null, 2);
-        
+
         // Create a blob and download link
-        const blob = new Blob([jsonString], { type: 'application/json' });
+        const blob = new Blob([jsonString], { type: "application/json" });
         const url = URL.createObjectURL(blob);
-        const a = document.createElement('a');
+        const a = document.createElement("a");
         a.href = url;
-        a.download = `scene-${new Date().toISOString().split('T')[0]}.json`;
+        a.download = `scene-${new Date().toISOString().split("T")[0]}.json`;
         document.body.appendChild(a);
         a.click();
         document.body.removeChild(a);
@@ -142,8 +257,8 @@ export function LevelEditor() {
       }
     };
 
-    window.addEventListener('keydown', handleKeyDown);
-    return () => window.removeEventListener('keydown', handleKeyDown);
+    window.addEventListener("keydown", handleKeyDown);
+    return () => window.removeEventListener("keydown", handleKeyDown);
   }, [objects]);
 
   // Hide WASD info after 10 seconds
@@ -238,9 +353,9 @@ export function LevelEditor() {
   // Function to duplicate an object
   const duplicateObject = useCallback(
     (id: string) => {
-      const objectToDuplicate = objects.find(obj => obj.id === id);
+      const objectToDuplicate = objects.find((obj) => obj.id === id);
       if (!objectToDuplicate) return;
-      
+
       // Create a new object based on the selected one with a small offset
       const newObject: SceneObject = {
         ...objectToDuplicate,
@@ -251,8 +366,8 @@ export function LevelEditor() {
           objectToDuplicate.position[2] + 0.5, // Offset Z by 0.5
         ],
       };
-      
-      setObjects(prev => [...prev, newObject]);
+
+      setObjects((prev) => [...prev, newObject]);
       setSelectedObjectId(newObject.id); // Select the new object
     },
     [objects]
@@ -262,17 +377,19 @@ export function LevelEditor() {
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
       // Skip if an input element is focused
-      if (document.activeElement instanceof HTMLInputElement || 
-          document.activeElement instanceof HTMLTextAreaElement ||
-          document.activeElement instanceof HTMLSelectElement) {
+      if (
+        document.activeElement instanceof HTMLInputElement ||
+        document.activeElement instanceof HTMLTextAreaElement ||
+        document.activeElement instanceof HTMLSelectElement
+      ) {
         return;
       }
-      
+
       // Delete with Backspace
       if (e.key === "Backspace" && selectedObjectId) {
         deleteObject(selectedObjectId);
       }
-      
+
       // Duplicate with Cmd+D
       if (e.key === "d" && (e.metaKey || e.ctrlKey) && selectedObjectId) {
         e.preventDefault(); // Prevent browser's default behavior
@@ -348,7 +465,7 @@ export function LevelEditor() {
             snapEnabled={snapEnabled && showBoundingBoxes}
             snapThreshold={snapThreshold}
           />
-          <OrbitControls makeDefault />
+          {/* <OrbitControls makeDefault /> */}
           <WASDControls moveSpeed={wasdMoveSpeed} />
         </Canvas>
 
@@ -370,7 +487,13 @@ export function LevelEditor() {
         {/* WASD Controls Info Overlay */}
         {showWasdInfo && (
           <div className="absolute bottom-4 left-4 bg-gray-800/80 p-2 rounded text-sm">
-            <p>Use <strong>WASD</strong> keys to move camera</p>
+            <p>
+              Use <strong>WASD</strong> keys to move camera
+              forward/backward/left/right
+            </p>
+            <p>
+              Use <strong>Q/E</strong> keys to move camera down/up
+            </p>
             <div className="flex items-center mt-2">
               <span className="mr-2">Speed:</span>
               <input
@@ -384,7 +507,7 @@ export function LevelEditor() {
               />
               <span className="ml-2">{wasdMoveSpeed}</span>
             </div>
-            <button 
+            <button
               onClick={() => setShowWasdInfo(false)}
               className="text-xs text-gray-400 hover:text-white mt-1"
             >
@@ -503,13 +626,13 @@ function ModelObject({
   // Clone the scene to avoid sharing issues
   const clonedScene = useMemo(() => {
     const cloned = scene.clone();
-    
+
     // Reduce metalness of all materials in the model
     cloned.traverse((node) => {
       if (node.isMesh && node.material) {
         // Handle both single materials and arrays of materials
         if (Array.isArray(node.material)) {
-          node.material.forEach(material => {
+          node.material.forEach((material) => {
             if (material.metalness !== undefined) {
               material.metalness = 0.3; // Reduce metalness to a lower value
             }
@@ -519,7 +642,7 @@ function ModelObject({
         }
       }
     });
-    
+
     return cloned;
   }, [scene]);
 
