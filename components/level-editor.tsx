@@ -31,7 +31,7 @@ export interface SceneObject {
 }
 
 // WASD camera movement component
-function WASDControls({ moveSpeed = 0.1 }) {
+function WASDControls() {
   const { camera } = useThree();
   const keys = useRef<Record<string, boolean>>({
     w: false,
@@ -180,6 +180,16 @@ function WASDControls({ moveSpeed = 0.1 }) {
   }, [camera]);
 
   useFrame(() => {
+    // Calculate movement speed based on height
+    const minHeight = 1;
+    const maxHeight = 12;
+    const minSpeed = 0.02;
+    const maxSpeed = 0.1;
+    
+    const height = camera.position.y;
+    const t = Math.max(0, Math.min(1, (height - minHeight) / (maxHeight - minHeight)));
+    const moveSpeed = minSpeed + t * (maxSpeed - minSpeed);
+
     // Create camera-relative directions but projected onto XZ plane
     const forward = new Vector3(0, 0, -1).applyQuaternion(camera.quaternion);
     forward.y = 0; // Project onto XZ plane
@@ -543,7 +553,7 @@ export function LevelEditor() {
             snapThreshold={snapThreshold}
           />
           {/* <OrbitControls makeDefault /> */}
-          <WASDControls moveSpeed={wasdMoveSpeed} />
+          <WASDControls />
           <CameraCapture setCamera={(camera) => (cameraRef.current = camera)} />
         </Canvas>
 
@@ -572,19 +582,6 @@ export function LevelEditor() {
             <p>
               Use <strong>Q/E</strong> keys to move camera down/up
             </p>
-            <div className="flex items-center mt-2">
-              <span className="mr-2">Speed:</span>
-              <input
-                type="range"
-                min="0.05"
-                max="0.5"
-                step="0.05"
-                value={wasdMoveSpeed}
-                onChange={(e) => setWasdMoveSpeed(parseFloat(e.target.value))}
-                className="w-32"
-              />
-              <span className="ml-2">{wasdMoveSpeed}</span>
-            </div>
             <button
               onClick={() => setShowWasdInfo(false)}
               className="text-xs text-gray-400 hover:text-white mt-1"
