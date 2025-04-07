@@ -118,11 +118,41 @@ export function LevelEditor() {
     [selectedObjectId]
   );
 
+  // Function to duplicate an object
+  const duplicateObject = useCallback(
+    (id: string) => {
+      const objectToDuplicate = objects.find(obj => obj.id === id);
+      if (!objectToDuplicate) return;
+      
+      // Create a new object based on the selected one with a small offset
+      const newObject: SceneObject = {
+        ...objectToDuplicate,
+        id: uuidv4(), // Generate a new ID
+        position: [
+          objectToDuplicate.position[0] + 0.5, // Offset X by 0.5
+          objectToDuplicate.position[1],
+          objectToDuplicate.position[2] + 0.5, // Offset Z by 0.5
+        ],
+      };
+      
+      setObjects(prev => [...prev, newObject]);
+      setSelectedObjectId(newObject.id); // Select the new object
+    },
+    [objects]
+  );
+
   // Handle keyboard shortcuts
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
+      // Delete with Backspace
       if (e.key === "Backspace" && selectedObjectId) {
         deleteObject(selectedObjectId);
+      }
+      
+      // Duplicate with Cmd+D
+      if (e.key === "d" && (e.metaKey || e.ctrlKey) && selectedObjectId) {
+        e.preventDefault(); // Prevent browser's default behavior
+        duplicateObject(selectedObjectId);
       }
     };
 
@@ -130,7 +160,7 @@ export function LevelEditor() {
     return () => {
       window.removeEventListener("keydown", handleKeyDown);
     };
-  }, [selectedObjectId, deleteObject]);
+  }, [selectedObjectId, deleteObject, duplicateObject]);
 
   const resetScene = () => {
     if (
