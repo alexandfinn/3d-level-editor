@@ -21,7 +21,7 @@ export function ObjectList({
   }
 
   return (
-    <div className="space-y-1 max-h-[calc(100vh-300px)] overflow-y-auto">
+    <div className="space-y-1 w-full">
       {objects.map((obj, index) => (
         <div
           key={obj.id}
@@ -30,16 +30,16 @@ export function ObjectList({
           }`}
           onClick={() => onSelect(obj.id)}
         >
-          <div className="flex items-center">
+          <div className="flex items-center overflow-hidden flex-grow min-w-0 mr-1">
             <div className="mr-2 flex-shrink-0" style={{ width: 24, height: 24 }}>
               <ModelThumbnail modelPath={obj.modelPath || "/models/model.glb"} size={24} />
             </div>
-            <span>{obj.name}</span>
+            <span className="truncate min-w-0">{obj.name}</span>
           </div>
           <Button
             variant="ghost"
             size="icon"
-            className="h-6 w-6"
+            className="h-6 w-6 flex-shrink-0"
             onClick={(e) => {
               e.stopPropagation()
               onDelete(obj.id)

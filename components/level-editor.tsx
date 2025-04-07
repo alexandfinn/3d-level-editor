@@ -11,6 +11,7 @@ import * as THREE from "three";
 import { useGLTF } from "@react-three/drei";
 import { useMemo } from "react";
 import { Box3, Box3Helper, Vector3 } from "three";
+import { VerticalScrollArea } from "@/components/ui/vertical-scroll-area";
 
 // Now we only have "model" as the object type
 export type ObjectType = "model";
@@ -305,26 +306,30 @@ export function LevelEditor() {
   return (
     <div className="flex h-screen bg-gray-900 text-white">
       {/* Left sidebar */}
-      <div className="w-64 min-w-64 flex-shrink-0 p-4 border-r border-gray-700 flex flex-col">
-        <ObjectLibrary onAddObject={addObject} />
-        <div className="mt-4">
-          <h3 className="text-lg font-semibold mb-2">Objects</h3>
-          <ObjectList
-            objects={objects}
-            selectedId={selectedObjectId}
-            onSelect={setSelectedObjectId}
-            onDelete={deleteObject}
-          />
-        </div>
+      <div className="w-72 min-w-72 flex-shrink-0 border-r border-gray-700 flex flex-col h-screen overflow-hidden">
+        <VerticalScrollArea className="flex-1 w-full overflow-x-hidden">
+          <div className="p-4 w-full min-w-0">
+            <ObjectLibrary onAddObject={addObject} />
+            <div className="mt-4">
+              <h3 className="text-lg font-semibold mb-2">Objects</h3>
+              <ObjectList
+                objects={objects}
+                selectedId={selectedObjectId}
+                onSelect={setSelectedObjectId}
+                onDelete={deleteObject}
+              />
+            </div>
+          </div>
+        </VerticalScrollArea>
       </div>
 
       {/* Main canvas */}
       <div className="flex-1 relative">
         <Canvas shadows camera={{ position: [5, 5, 5], fov: 50 }}>
-          <ambientLight intensity={50} />
+          <ambientLight intensity={5} />
           <directionalLight
             position={[10, 10, 10]}
-            intensity={4}
+            intensity={15}
             castShadow
             shadow-mapSize-width={2048}
             shadow-mapSize-height={2048}
@@ -391,20 +396,22 @@ export function LevelEditor() {
 
       {/* Right sidebar - Properties panel */}
       <div
-        className={`w-64 min-w-64 flex-shrink-0 border-l border-gray-700 transition-all duration-200 ${
-          selectedObject ? "p-4" : "w-0 min-w-0 opacity-0"
+        className={`w-72 min-w-72 flex-shrink-0 border-l border-gray-700 transition-all duration-200 ${
+          selectedObject ? "h-screen overflow-hidden" : "w-0 min-w-0 opacity-0"
         }`}
       >
         {selectedObject && (
-          <>
-            <h3 className="text-lg font-semibold mb-4">
-              {selectedObject.name}
-            </h3>
-            <ObjectProperties
-              object={selectedObject}
-              onUpdate={(updates) => updateObject(selectedObject.id, updates)}
-            />
-          </>
+          <VerticalScrollArea className="h-full w-full overflow-x-hidden">
+            <div className="p-4 w-full min-w-0">
+              <h3 className="text-lg font-semibold mb-4">
+                {selectedObject.name}
+              </h3>
+              <ObjectProperties
+                object={selectedObject}
+                onUpdate={(updates) => updateObject(selectedObject.id, updates)}
+              />
+            </div>
+          </VerticalScrollArea>
         )}
       </div>
     </div>
@@ -495,7 +502,25 @@ function ModelObject({
 
   // Clone the scene to avoid sharing issues
   const clonedScene = useMemo(() => {
-    return scene.clone();
+    const cloned = scene.clone();
+    
+    // Reduce metalness of all materials in the model
+    cloned.traverse((node) => {
+      if (node.isMesh && node.material) {
+        // Handle both single materials and arrays of materials
+        if (Array.isArray(node.material)) {
+          node.material.forEach(material => {
+            if (material.metalness !== undefined) {
+              material.metalness = 0.3; // Reduce metalness to a lower value
+            }
+          });
+        } else if (node.material.metalness !== undefined) {
+          node.material.metalness = 0.3; // Reduce metalness to a lower value
+        }
+      }
+    });
+    
+    return cloned;
   }, [scene]);
 
   // Update bounding box on each frame when visible and store it in the ref map
@@ -786,11 +811,11 @@ function ObjectProperties({
   };
 
   return (
-    <div className="space-y-4">
+    <div className="space-y-4 w-full min-w-0">
       <div>
         <h4 className="font-medium mb-2">Position</h4>
         <div className="grid grid-cols-3 gap-2">
-          <div>
+          <div className="min-w-0">
             <label className="block text-xs mb-1">X</label>
             <input
               type="number"
@@ -802,7 +827,7 @@ function ObjectProperties({
               step={0.1}
             />
           </div>
-          <div>
+          <div className="min-w-0">
             <label className="block text-xs mb-1">Y</label>
             <input
               type="number"
@@ -817,7 +842,7 @@ function ObjectProperties({
               disabled={object.groundLevel}
             />
           </div>
-          <div>
+          <div className="min-w-0">
             <label className="block text-xs mb-1">Z</label>
             <input
               type="number"
@@ -835,7 +860,7 @@ function ObjectProperties({
       <div>
         <h4 className="font-medium mb-2">Rotation</h4>
         <div className="grid grid-cols-3 gap-2">
-          <div>
+          <div className="min-w-0">
             <label className="block text-xs mb-1">X</label>
             <input
               type="number"
@@ -847,7 +872,7 @@ function ObjectProperties({
               step={0.1}
             />
           </div>
-          <div>
+          <div className="min-w-0">
             <label className="block text-xs mb-1">Y</label>
             <input
               type="number"
@@ -859,7 +884,7 @@ function ObjectProperties({
               step={0.1}
             />
           </div>
-          <div>
+          <div className="min-w-0">
             <label className="block text-xs mb-1">Z</label>
             <input
               type="number"
@@ -891,7 +916,7 @@ function ObjectProperties({
       <div>
         <h4 className="font-medium mb-2">Scale</h4>
         <div className="grid grid-cols-3 gap-2">
-          <div>
+          <div className="min-w-0">
             <label className="block text-xs mb-1">X</label>
             <input
               type="number"
@@ -904,7 +929,7 @@ function ObjectProperties({
               min={0.1}
             />
           </div>
-          <div>
+          <div className="min-w-0">
             <label className="block text-xs mb-1">Y</label>
             <input
               type="number"
@@ -917,7 +942,7 @@ function ObjectProperties({
               min={0.1}
             />
           </div>
-          <div>
+          <div className="min-w-0">
             <label className="block text-xs mb-1">Z</label>
             <input
               type="number"
@@ -963,7 +988,7 @@ function ObjectProperties({
 
       <div>
         <h4 className="font-medium mb-2">Model</h4>
-        <p className="text-sm text-gray-400">
+        <p className="text-sm text-gray-400 break-all overflow-hidden text-ellipsis">
           {object.modelPath || "/models/model.glb"}
         </p>
       </div>
