@@ -230,6 +230,7 @@ export function LevelEditor() {
   const [snapThreshold, setSnapThreshold] = useState(0.5); // Snap distance threshold
   const [wasdMoveSpeed, setWasdMoveSpeed] = useState(0.1); // Movement speed for WASD controls
   const [showWasdInfo, setShowWasdInfo] = useState(true); // Show WASD info overlay initially
+  const cameraRef = useRef<THREE.Camera | null>(null); // Ref to store the camera
 
   // Handle keyboard shortcuts
   useEffect(() => {
@@ -288,14 +289,90 @@ export function LevelEditor() {
     localStorage.setItem("levelEditorObjects", JSON.stringify(objects));
   }, [objects]);
 
+  // Get camera look position on the ground plane
+  const getCameraLookPosition = (): [number, number, number] => {
+    if (!cameraRef.current) {
+      return [0, 0, 0]; // Default position if camera not available
+    }
+
+    // Create a ray from the camera position in the direction it's facing
+    const camera = cameraRef.current;
+    const camPosition = new THREE.Vector3();
+    camera.getWorldPosition(camPosition);
+    
+    const direction = new THREE.Vector3(0, 0, -1);
+    direction.applyQuaternion(camera.quaternion);
+    direction.normalize();
+    
+    // Create a raycaster
+    const raycaster = new THREE.Raycaster();
+    raycaster.set(camPosition, direction);
+    
+    // Check intersection with ground plane (y=0)
+    const planeNormal = new THREE.Vector3(0, 1, 0);
+    const planeConstant = 0; // Distance from origin
+    const groundPlane = new THREE.Plane(planeNormal, planeConstant);
+    
+    // Calculate intersection
+    const target = new THREE.Vector3();
+    const hasIntersection = raycaster.ray.intersectPlane(groundPlane, target);
+    
+    let finalPosition: THREE.Vector3;
+    
+    // Camera height factor - the lower the camera, the closer the object should be placed to camera's x/z
+    const cameraHeight = camPosition.y;
+    const heightFactor = Math.min(1, Math.max(0, (cameraHeight - 1) / 5)); // 0 when camera is at y=1, 1 when camera is at y=6 or above
+    
+    if (hasIntersection) {
+      // Use intersection point, but blend with camera x/z based on height
+      if (cameraHeight < 6) {
+        // Create a position that's a blend between camera x/z and intersection x/z
+        const cameraXZ = new THREE.Vector3(camPosition.x, 0, camPosition.z);
+        const intersectionXZ = new THREE.Vector3(target.x, 0, target.z);
+        
+        // Direction from camera to intersection, with length limited by camera height
+        const blendDirection = new THREE.Vector3().subVectors(intersectionXZ, cameraXZ);
+        const maxDistance = Math.max(2, cameraHeight * 1.5); // Closer when camera is lower
+        
+        if (blendDirection.length() > maxDistance) {
+          blendDirection.normalize().multiplyScalar(maxDistance);
+        }
+        
+        // Final position is camera x/z plus the limited direction
+        finalPosition = cameraXZ.add(blendDirection);
+      } else {
+        // Use the intersection point normally when camera is higher
+        finalPosition = target;
+      }
+    } else {
+      // If no intersection (looking upwards), use a position in front of the camera
+      const forwardDistance = Math.max(2, cameraHeight * 0.8); // Distance scales with height
+      finalPosition = new THREE.Vector3(
+        camPosition.x + direction.x * forwardDistance,
+        0,
+        camPosition.z + direction.z * forwardDistance
+      );
+    }
+    
+    // Apply grid snapping
+    const snappedX = Math.round(finalPosition.x * 2) / 2;
+    const snappedZ = Math.round(finalPosition.z * 2) / 2;
+    
+    return [snappedX, 0, snappedZ];
+  };
+
   const addObject = (type: ObjectType, modelPath?: string) => {
     const modelName = modelPath
       ? modelPath.split("/").pop()?.replace(".glb", "") || "Model"
       : "Model";
+      
+    // Get the position where the camera is looking
+    const position = getCameraLookPosition();
+      
     const newObject: SceneObject = {
       id: uuidv4(),
       type,
-      position: [0, 0, 0],
+      position,
       rotation: [0, 0, 0],
       scale: [0.5, 0.5, 0.5],
       color: "#" + Math.floor(Math.random() * 16777215).toString(16),
@@ -467,6 +544,7 @@ export function LevelEditor() {
           />
           {/* <OrbitControls makeDefault /> */}
           <WASDControls moveSpeed={wasdMoveSpeed} />
+          <CameraCapture setCamera={(camera) => (cameraRef.current = camera)} />
         </Canvas>
 
         {/* Editor controls overlay */}
@@ -629,15 +707,15 @@ function ModelObject({
 
     // Reduce metalness of all materials in the model
     cloned.traverse((node) => {
-      if (node.isMesh && node.material) {
+      if (node instanceof THREE.Mesh && node.material) {
         // Handle both single materials and arrays of materials
         if (Array.isArray(node.material)) {
           node.material.forEach((material) => {
-            if (material.metalness !== undefined) {
+            if ('metalness' in material && material.metalness !== undefined) {
               material.metalness = 0.3; // Reduce metalness to a lower value
             }
           });
-        } else if (node.material.metalness !== undefined) {
+        } else if ('metalness' in node.material && node.material.metalness !== undefined) {
           node.material.metalness = 0.3; // Reduce metalness to a lower value
         }
       }
@@ -1117,4 +1195,15 @@ function ObjectProperties({
       </div>
     </div>
   );
+}
+
+// Camera capture component to get a reference to the camera
+function CameraCapture({ setCamera }: { setCamera: (camera: THREE.Camera) => void }) {
+  const { camera } = useThree();
+  
+  useEffect(() => {
+    setCamera(camera);
+  }, [camera, setCamera]);
+  
+  return null;
 }
