@@ -4,7 +4,7 @@ import type React from "react"
 
 import { Button } from "@/components/ui/button"
 import type { TransformMode } from "./level-editor"
-import { Move, RotateCcw, Maximize, Box, Magnet, Trash2 } from "lucide-react"
+import { Move, RotateCcw, Maximize, Box, Magnet, Trash2, Keyboard } from "lucide-react"
 
 export function EditorControls({
   transformMode,
@@ -14,6 +14,8 @@ export function EditorControls({
   snapEnabled,
   onToggleSnap,
   onReset,
+  showWasdInfo,
+  onToggleWasdInfo,
 }: {
   transformMode: TransformMode
   onChangeMode: (mode: TransformMode) => void
@@ -22,6 +24,8 @@ export function EditorControls({
   snapEnabled: boolean
   onToggleSnap: () => void
   onReset: () => void
+  showWasdInfo: boolean
+  onToggleWasdInfo: () => void
 }) {
   const controls: { mode: TransformMode; icon: React.ReactNode; label: string }[] = [
     { mode: "translate", icon: <Move className="h-4 w-4" />, label: "Move" },
@@ -62,6 +66,15 @@ export function EditorControls({
         >
           <Magnet className="h-4 w-4" />
           <span className="ml-1">Snap</span>
+        </Button>
+        <Button
+          variant={showWasdInfo ? "secondary" : "default"}
+          size="sm"
+          onClick={onToggleWasdInfo}
+          title="Toggle WASD Controls Info"
+        >
+          <Keyboard className="h-4 w-4" />
+          <span className="ml-1">WASD</span>
         </Button>
         <Button
           variant="destructive"

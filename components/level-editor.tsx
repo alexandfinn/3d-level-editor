@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useRef, useEffect, useCallback } from "react";
-import { Canvas } from "@react-three/fiber";
+import { Canvas, useFrame, useThree } from "@react-three/fiber";
 import { OrbitControls, Grid, TransformControls } from "@react-three/drei";
 import { ObjectLibrary } from "./object-library";
 import { EditorControls } from "./editor-controls";
@@ -10,8 +10,7 @@ import { v4 as uuidv4 } from "uuid";
 import * as THREE from "three";
 import { useGLTF } from "@react-three/drei";
 import { useMemo } from "react";
-import { Box3, Box3Helper } from "three";
-import { useFrame } from "@react-three/fiber";
+import { Box3, Box3Helper, Vector3 } from "three";
 
 // Now we only have "model" as the object type
 export type ObjectType = "model";
@@ -30,6 +29,81 @@ export interface SceneObject {
   snapToGrid: boolean; // New property to enable grid snapping
 }
 
+// WASD camera movement component
+function WASDControls({ moveSpeed = 0.1 }) {
+  const { camera } = useThree();
+  const keys = useRef<Record<string, boolean>>({
+    w: false,
+    a: false,
+    s: false,
+    d: false,
+  });
+
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      // Skip if an input element is focused
+      if (document.activeElement instanceof HTMLInputElement || 
+          document.activeElement instanceof HTMLTextAreaElement ||
+          document.activeElement instanceof HTMLSelectElement) {
+        return;
+      }
+      
+      // Only handle WASD keys
+      if (e.key.toLowerCase() === 'w' || 
+          e.key.toLowerCase() === 'a' || 
+          e.key.toLowerCase() === 's' || 
+          e.key.toLowerCase() === 'd') {
+        keys.current[e.key.toLowerCase()] = true;
+      }
+    };
+
+    const handleKeyUp = (e: KeyboardEvent) => {
+      // Only handle WASD keys
+      if (e.key.toLowerCase() === 'w' || 
+          e.key.toLowerCase() === 'a' || 
+          e.key.toLowerCase() === 's' || 
+          e.key.toLowerCase() === 'd') {
+        keys.current[e.key.toLowerCase()] = false;
+      }
+    };
+
+    window.addEventListener('keydown', handleKeyDown);
+    window.addEventListener('keyup', handleKeyUp);
+
+    return () => {
+      window.removeEventListener('keydown', handleKeyDown);
+      window.removeEventListener('keyup', handleKeyUp);
+    };
+  }, []);
+
+  useFrame(() => {
+    // Get camera forward direction (excluding y component for horizontal movement)
+    const forward = new Vector3(0, 0, -1).applyQuaternion(camera.quaternion);
+    forward.y = 0;
+    forward.normalize();
+
+    // Get camera right direction
+    const right = new Vector3(1, 0, 0).applyQuaternion(camera.quaternion);
+    right.y = 0;
+    right.normalize();
+
+    // Apply movement based on keys pressed
+    const moveVector = new Vector3(0, 0, 0);
+
+    if (keys.current.w) moveVector.add(forward.clone().multiplyScalar(moveSpeed));
+    if (keys.current.s) moveVector.add(forward.clone().multiplyScalar(-moveSpeed));
+    if (keys.current.a) moveVector.add(right.clone().multiplyScalar(-moveSpeed));
+    if (keys.current.d) moveVector.add(right.clone().multiplyScalar(moveSpeed));
+
+    // Update camera position
+    if (moveVector.length() > 0) {
+      camera.position.add(moveVector);
+    }
+  });
+
+  return null;
+}
+
 export function LevelEditor() {
   const [objects, setObjects] = useState<SceneObject[]>([]);
   const [selectedObjectId, setSelectedObjectId] = useState<string | null>(null);
@@ -38,6 +112,48 @@ export function LevelEditor() {
   const [showBoundingBoxes, setShowBoundingBoxes] = useState(false);
   const [snapEnabled, setSnapEnabled] = useState(true); // Default to enabled
   const [snapThreshold, setSnapThreshold] = useState(0.5); // Snap distance threshold
+  const [wasdMoveSpeed, setWasdMoveSpeed] = useState(0.1); // Movement speed for WASD controls
+  const [showWasdInfo, setShowWasdInfo] = useState(true); // Show WASD info overlay initially
+
+  // Handle keyboard shortcuts
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      // Check for Cmd+S (Mac) or Ctrl+S (Windows)
+      if ((e.metaKey || e.ctrlKey) && e.key === 's') {
+        e.preventDefault();
+        // Create a JSON string of the scene data
+        const sceneData = {
+          objects,
+          timestamp: new Date().toISOString(),
+        };
+        const jsonString = JSON.stringify(sceneData, null, 2);
+        
+        // Create a blob and download link
+        const blob = new Blob([jsonString], { type: 'application/json' });
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = `scene-${new Date().toISOString().split('T')[0]}.json`;
+        document.body.appendChild(a);
+        a.click();
+        document.body.removeChild(a);
+        URL.revokeObjectURL(url);
+      }
+    };
+
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [objects]);
+
+  // Hide WASD info after 10 seconds
+  useEffect(() => {
+    if (showWasdInfo) {
+      const timeout = setTimeout(() => {
+        setShowWasdInfo(false);
+      }, 10000);
+      return () => clearTimeout(timeout);
+    }
+  }, [showWasdInfo]);
 
   // Load objects from localStorage on component mount
   useEffect(() => {
@@ -144,6 +260,13 @@ export function LevelEditor() {
   // Handle keyboard shortcuts
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
+      // Skip if an input element is focused
+      if (document.activeElement instanceof HTMLInputElement || 
+          document.activeElement instanceof HTMLTextAreaElement ||
+          document.activeElement instanceof HTMLSelectElement) {
+        return;
+      }
+      
       // Delete with Backspace
       if (e.key === "Backspace" && selectedObjectId) {
         deleteObject(selectedObjectId);
@@ -221,6 +344,7 @@ export function LevelEditor() {
             snapThreshold={snapThreshold}
           />
           <OrbitControls makeDefault />
+          <WASDControls moveSpeed={wasdMoveSpeed} />
         </Canvas>
 
         {/* Editor controls overlay */}
@@ -233,8 +357,36 @@ export function LevelEditor() {
             snapEnabled={snapEnabled}
             onToggleSnap={() => setSnapEnabled((prev) => !prev)}
             onReset={resetScene}
+            showWasdInfo={showWasdInfo}
+            onToggleWasdInfo={() => setShowWasdInfo((prev) => !prev)}
           />
         </div>
+
+        {/* WASD Controls Info Overlay */}
+        {showWasdInfo && (
+          <div className="absolute bottom-4 left-4 bg-gray-800/80 p-2 rounded text-sm">
+            <p>Use <strong>WASD</strong> keys to move camera</p>
+            <div className="flex items-center mt-2">
+              <span className="mr-2">Speed:</span>
+              <input
+                type="range"
+                min="0.05"
+                max="0.5"
+                step="0.05"
+                value={wasdMoveSpeed}
+                onChange={(e) => setWasdMoveSpeed(parseFloat(e.target.value))}
+                className="w-32"
+              />
+              <span className="ml-2">{wasdMoveSpeed}</span>
+            </div>
+            <button 
+              onClick={() => setShowWasdInfo(false)}
+              className="text-xs text-gray-400 hover:text-white mt-1"
+            >
+              Dismiss
+            </button>
+          </div>
+        )}
       </div>
 
       {/* Right sidebar - Properties panel */}
