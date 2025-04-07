@@ -178,12 +178,7 @@ export function LevelEditor() {
           />
           <group>
             {/* Main grid (1x1) */}
-            <Grid
-              infiniteGrid
-              fadeStrength={0.5}
-              fadeDistance={30}
-              cellColor="white"
-            />
+            <Grid infiniteGrid cellColor="white" />
           </group>
           <Scene
             objects={objects}
