@@ -57,7 +57,9 @@ export function LevelEditor() {
   }, [objects]);
 
   const addObject = (type: ObjectType, modelPath?: string) => {
-    const modelName = modelPath ? modelPath.split('/').pop()?.replace('.glb', '') || 'Model' : 'Model';
+    const modelName = modelPath
+      ? modelPath.split("/").pop()?.replace(".glb", "") || "Model"
+      : "Model";
     const newObject: SceneObject = {
       id: uuidv4(),
       type,
@@ -81,23 +83,23 @@ export function LevelEditor() {
 
         // If groundLevel is true, ensure y position is 0
         const newObj = { ...obj, ...updates };
-        
+
         // Apply position modifications
         if (updates.position) {
           const newPosition: [number, number, number] = [...newObj.position];
-          
+
           // Apply ground level constraint
           if (newObj.groundLevel) {
             newPosition[1] = 0;
           }
-          
+
           // Apply grid snapping if enabled
           if (newObj.snapToGrid) {
             // Snap X and Z to 0.5 grid
             newPosition[0] = Math.round(newPosition[0] * 2) / 2;
             newPosition[2] = Math.round(newPosition[2] * 2) / 2;
           }
-          
+
           return { ...newObj, position: newPosition };
         }
 
@@ -106,12 +108,15 @@ export function LevelEditor() {
     );
   };
 
-  const deleteObject = useCallback((id: string) => {
-    setObjects((prev) => prev.filter((obj) => obj.id !== id));
-    if (selectedObjectId === id) {
-      setSelectedObjectId(null);
-    }
-  }, [selectedObjectId]);
+  const deleteObject = useCallback(
+    (id: string) => {
+      setObjects((prev) => prev.filter((obj) => obj.id !== id));
+      if (selectedObjectId === id) {
+        setSelectedObjectId(null);
+      }
+    },
+    [selectedObjectId]
+  );
 
   // Handle keyboard shortcuts
   useEffect(() => {
@@ -148,7 +153,6 @@ export function LevelEditor() {
     <div className="flex h-screen bg-gray-900 text-white">
       {/* Left sidebar */}
       <div className="w-64 min-w-64 flex-shrink-0 p-4 border-r border-gray-700 flex flex-col">
-        <h2 className="text-xl font-bold mb-4">3D Level Editor</h2>
         <ObjectLibrary onAddObject={addObject} />
         <div className="mt-4">
           <h3 className="text-lg font-semibold mb-2">Objects</h3>
@@ -174,7 +178,12 @@ export function LevelEditor() {
           />
           <group>
             {/* Main grid (1x1) */}
-            <Grid infiniteGrid fadeStrength={0.5} fadeDistance={30} cellColor="white" />
+            <Grid
+              infiniteGrid
+              fadeStrength={0.5}
+              fadeDistance={30}
+              cellColor="white"
+            />
           </group>
           <Scene
             objects={objects}
@@ -211,7 +220,9 @@ export function LevelEditor() {
       >
         {selectedObject && (
           <>
-            <h3 className="text-lg font-semibold mb-4">{selectedObject.name}</h3>
+            <h3 className="text-lg font-semibold mb-4">
+              {selectedObject.name}
+            </h3>
             <ObjectProperties
               object={selectedObject}
               onUpdate={(updates) => updateObject(selectedObject.id, updates)}
@@ -426,9 +437,9 @@ function ModelObject({
         position = [
           Math.round(position[0] * 2) / 2,
           position[1],
-          Math.round(position[2] * 2) / 2
+          Math.round(position[2] * 2) / 2,
         ];
-        
+
         // Update the actual model position to show the snap
         modelRef.current.position.x = position[0];
         modelRef.current.position.z = position[2];
@@ -552,6 +563,27 @@ function ObjectProperties({
     onUpdate({ rotation: newRotation });
   };
 
+  const rotateObject = (direction: "left" | "right") => {
+    // Get current Y rotation
+    const currentRotationY = object.rotation[1];
+
+    // Calculate new rotation (add or subtract 90 degrees in radians)
+    const rotationAmount = Math.PI / 2; // 90 degrees in radians
+    const newRotationY =
+      direction === "left"
+        ? currentRotationY - rotationAmount
+        : currentRotationY + rotationAmount;
+
+    // Update rotation
+    const newRotation: [number, number, number] = [
+      object.rotation[0],
+      newRotationY,
+      object.rotation[2],
+    ];
+
+    onUpdate({ rotation: newRotation });
+  };
+
   const handleScaleChange = (axis: number, value: number) => {
     const newScale = [...object.scale] as [number, number, number];
     newScale[axis] = value;
@@ -564,13 +596,13 @@ function ObjectProperties({
 
   const handleSnapToGridChange = (checked: boolean) => {
     onUpdate({ snapToGrid: checked });
-    
+
     // If enabling snap to grid, immediately apply it to the current position
     if (checked) {
       const snappedPosition: [number, number, number] = [
         Math.round(object.position[0] * 2) / 2,
         object.position[1],
-        Math.round(object.position[2] * 2) / 2
+        Math.round(object.position[2] * 2) / 2,
       ];
       onUpdate({ position: snappedPosition });
     }
@@ -662,6 +694,20 @@ function ObjectProperties({
               step={0.1}
             />
           </div>
+        </div>
+        <div className="mt-2 flex space-x-2">
+          <button
+            onClick={() => rotateObject("left")}
+            className="flex-1 bg-gray-700 hover:bg-gray-600 text-white px-2 py-1 rounded text-lg"
+          >
+            ↺
+          </button>
+          <button
+            onClick={() => rotateObject("right")}
+            className="flex-1 bg-gray-700 hover:bg-gray-600 text-white px-2 py-1 rounded text-lg"
+          >
+            ↻
+          </button>
         </div>
       </div>
 
