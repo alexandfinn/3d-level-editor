@@ -21,22 +21,6 @@ interface ModelsByCategory {
   [category: string]: Model[];
 }
 
-// This is our model registry - add new models here
-const availableModels = [
-  {
-    name: "Custom Model",
-    path: "/models/model.glb",
-  },
-  {
-    name: "Dungeon 1",
-    path: "/models/Dungeon_Big.001.glb",
-  },
-  {
-    name: "Table",
-    path: "/models/Table_Small.glb",
-  },
-  // Add more models here as you add them to the public/models directory
-];
 
 export function ModelsLibrary({
   onAddModel,

@@ -14,7 +14,7 @@ import { Box3, Box3Helper, Vector3 } from "three";
 import { VerticalScrollArea } from "@/components/ui/vertical-scroll-area";
 
 // Now we only have "model" as the object type
-export type ObjectType = "model";
+export type ObjectType = "model" | "trigger" | "light";
 export type TransformMode = "translate" | "rotate" | "scale";
 
 export interface SceneObject {
@@ -240,7 +240,93 @@ export function LevelEditor() {
   const [snapThreshold, setSnapThreshold] = useState(0.5); // Snap distance threshold
   const [wasdMoveSpeed, setWasdMoveSpeed] = useState(0.1); // Movement speed for WASD controls
   const [showWasdInfo, setShowWasdInfo] = useState(true); // Show WASD info overlay initially
+  const [lockedCategories, setLockedCategories] = useState<Set<string>>(new Set()); // New state for locked categories
   const cameraRef = useRef<THREE.Camera | null>(null); // Ref to store the camera
+
+  // Helper function to get category from model path
+  const getCategoryFromPath = (modelPath?: string): string | null => {
+    if (!modelPath) return null;
+    const parts = modelPath.split('/');
+    return parts.length >= 3 ? parts[2] : null;
+  };
+
+  // Handle file drop
+  const handleDrop = useCallback((e: React.DragEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+
+    if (e.dataTransfer?.files) {
+      const file = e.dataTransfer.files[0];
+      if (file && file.name.endsWith('.json')) {
+        const reader = new FileReader();
+        reader.onload = (event) => {
+          try {
+            const data = JSON.parse(event.target?.result as string);
+            if (data.objects && Array.isArray(data.objects)) {
+              setObjects(data.objects);
+              setSelectedObjectId(null);
+            }
+          } catch (error) {
+            console.error('Failed to parse JSON file:', error);
+          }
+        };
+        reader.readAsText(file);
+      }
+    }
+  }, []);
+
+  // Prevent default drag behavior
+  const handleDragOver = useCallback((e: React.DragEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+  }, []);
+
+  // Modified selection handler to respect locked categories
+  const handleObjectSelect = (id: string | null) => {
+    if (!id) {
+      setSelectedObjectId(null);
+      return;
+    }
+
+    const object = objects.find(obj => obj.id === id);
+    if (!object) return;
+
+    const category = getCategoryFromPath(object.modelPath);
+    if (category && lockedCategories.has(category)) {
+      // Object's category is locked, don't allow selection
+      return;
+    }
+
+    setSelectedObjectId(id);
+  };
+
+  // Function to toggle category lock
+  const toggleCategoryLock = (category: string) => {
+    setLockedCategories(prev => {
+      const newSet = new Set(prev);
+      if (newSet.has(category)) {
+        newSet.delete(category);
+      } else {
+        newSet.add(category);
+        // If a category is being locked, deselect any selected object from that category
+        const selectedObject = objects.find(obj => obj.id === selectedObjectId);
+        if (selectedObject && getCategoryFromPath(selectedObject.modelPath) === category) {
+          setSelectedObjectId(null);
+        }
+      }
+      return newSet;
+    });
+  };
+
+  // Get unique categories from current objects
+  const getUniqueCategories = useCallback(() => {
+    const categories = new Set<string>();
+    objects.forEach(obj => {
+      const category = getCategoryFromPath(obj.modelPath);
+      if (category) categories.add(category);
+    });
+    return Array.from(categories);
+  }, [objects]);
 
   // Handle keyboard shortcuts
   useEffect(() => {
@@ -372,9 +458,17 @@ export function LevelEditor() {
   };
 
   const addObject = (type: ObjectType, modelPath?: string) => {
-    const modelName = modelPath
-      ? modelPath.split("/").pop()?.replace(".glb", "") || "Model"
-      : "Model";
+    let name = "Trigger";
+    let scale: [number, number, number] = [0.5, 0.5, 0.5];
+
+    if (type === "model") {
+      name = modelPath
+        ? modelPath.split("/").pop()?.replace(".glb", "") || "Model"
+        : "Model";
+    } else if (type === "light") {
+      name = "Directional Light";
+      scale = [1, 1, 1];
+    }
       
     // Get the position where the camera is looking
     const position = getCameraLookPosition();
@@ -384,10 +478,10 @@ export function LevelEditor() {
       type,
       position,
       rotation: [0, 0, 0],
-      scale: [0.5, 0.5, 0.5],
+      scale,
       color: "#" + Math.floor(Math.random() * 16777215).toString(16),
       modelPath,
-      name: modelName,
+      name,
       groundLevel: true,
       snapToGrid: true,
     };
@@ -523,19 +617,66 @@ export function LevelEditor() {
   const selectedObject = objects.find((obj) => obj.id === selectedObjectId);
 
   return (
-    <div className="flex h-screen bg-gray-900 text-white">
+    <div 
+      className="flex h-screen bg-gray-900 text-white"
+      onDrop={handleDrop}
+      onDragOver={handleDragOver}
+    >
       {/* Left sidebar */}
       <div className="w-72 min-w-72 flex-shrink-0 border-r border-gray-700 flex flex-col h-screen overflow-hidden">
         <VerticalScrollArea className="flex-1 w-full overflow-x-hidden">
           <div className="p-4 w-full min-w-0">
-            <ObjectLibrary onAddObject={addObject} />
+            <div className="mb-4">
+              <h3 className="text-lg font-semibold mb-2">Add Trigger</h3>
+              <button
+                onClick={() => addObject("trigger")}
+                className="w-full bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded transition-colors"
+              >
+                + New Trigger
+              </button>
+            </div>
+
+            <div className="mb-4">
+              <h3 className="text-lg font-semibold mb-2">Add Light</h3>
+              <button
+                onClick={() => addObject("light")}
+                className="w-full bg-yellow-600 hover:bg-yellow-700 text-white px-4 py-2 rounded transition-colors"
+              >
+                + Directional Light
+              </button>
+            </div>
+
+            <ObjectLibrary onAddObject={(type, modelPath) => addObject(type, modelPath)} />
+            
+            {/* Category Locks */}
+            <div className="mt-4">
+              <h3 className="text-lg font-semibold mb-2">Category Locks</h3>
+              <div className="space-y-2">
+                {getUniqueCategories().map(category => (
+                  <div key={category} className="flex items-center space-x-2">
+                    <input
+                      type="checkbox"
+                      id={`lock-${category}`}
+                      checked={lockedCategories.has(category)}
+                      onChange={() => toggleCategoryLock(category)}
+                      className="h-4 w-4 rounded border-gray-300 text-primary focus:ring-primary"
+                    />
+                    <label htmlFor={`lock-${category}`} className="font-medium capitalize">
+                      {category}
+                    </label>
+                  </div>
+                ))}
+              </div>
+            </div>
+
             <div className="mt-4">
               <h3 className="text-lg font-semibold mb-2">Objects</h3>
               <ObjectList
                 objects={objects}
                 selectedId={selectedObjectId}
-                onSelect={setSelectedObjectId}
+                onSelect={handleObjectSelect}
                 onDelete={deleteObject}
+                lockedCategories={lockedCategories}
               />
             </div>
           </div>
@@ -566,6 +707,7 @@ export function LevelEditor() {
             showBoundingBoxes={showBoundingBoxes}
             snapEnabled={snapEnabled && showBoundingBoxes}
             snapThreshold={snapThreshold}
+            lockedCategories={lockedCategories}
           />
           {/* <OrbitControls makeDefault /> */}
           <WASDControls />
@@ -640,6 +782,7 @@ function Scene({
   showBoundingBoxes,
   snapEnabled,
   snapThreshold,
+  lockedCategories,
 }: {
   objects: SceneObject[];
   selectedId: string | null;
@@ -649,8 +792,16 @@ function Scene({
   showBoundingBoxes: boolean;
   snapEnabled: boolean;
   snapThreshold: number;
+  lockedCategories: Set<string>;
 }) {
   const objectBoundingBoxes = useRef<Map<string, Box3>>(new Map());
+
+  // Helper function to get category from model path
+  const getCategoryFromPath = (modelPath?: string): string | null => {
+    if (!modelPath) return null;
+    const parts = modelPath.split('/');
+    return parts.length >= 3 ? parts[2] : null;
+  };
 
   // Function to get all objects' bounding boxes except the selected one
   const getOtherBoundingBoxes = (selectedId: string | null) => {
@@ -665,21 +816,502 @@ function Scene({
 
   return (
     <>
-      {objects.map((object) => (
-        <ModelObject
-          key={object.id}
-          object={object}
-          isSelected={object.id === selectedId}
-          onClick={() => onSelect(object.id)}
-          onUpdate={onUpdate}
-          transformMode={transformMode}
-          showBoundingBoxes={showBoundingBoxes}
-          snapEnabled={snapEnabled}
-          snapThreshold={snapThreshold}
-          objectBoundingBoxes={objectBoundingBoxes}
-          getOtherBoundingBoxes={() => getOtherBoundingBoxes(object.id)}
+      {objects.map((object) => {
+        const category = object.type === "trigger" ? "triggers" : getCategoryFromPath(object.modelPath);
+        const objectIsLocked = category !== null && lockedCategories.has(category);
+
+        if (object.type === "trigger") {
+          return (
+            <TriggerObject
+              key={object.id}
+              object={object}
+              isSelected={object.id === selectedId}
+              onClick={() => !objectIsLocked && onSelect(object.id)}
+              onUpdate={onUpdate}
+              transformMode={transformMode}
+              showBoundingBoxes={showBoundingBoxes}
+              snapEnabled={snapEnabled}
+              snapThreshold={snapThreshold}
+              objectBoundingBoxes={objectBoundingBoxes}
+              getOtherBoundingBoxes={() => getOtherBoundingBoxes(object.id)}
+              isLocked={objectIsLocked}
+            />
+          );
+        }
+
+        if (object.type === "light") {
+          return (
+            <LightObject
+              key={object.id}
+              object={object}
+              isSelected={object.id === selectedId}
+              onClick={() => !objectIsLocked && onSelect(object.id)}
+              onUpdate={onUpdate}
+              transformMode={transformMode}
+              showBoundingBoxes={showBoundingBoxes}
+              snapEnabled={snapEnabled}
+              snapThreshold={snapThreshold}
+              objectBoundingBoxes={objectBoundingBoxes}
+              getOtherBoundingBoxes={() => getOtherBoundingBoxes(object.id)}
+              isLocked={objectIsLocked}
+            />
+          );
+        }
+
+        return (
+          <ModelObject
+            key={object.id}
+            object={object}
+            isSelected={object.id === selectedId}
+            onClick={() => !objectIsLocked && onSelect(object.id)}
+            onUpdate={onUpdate}
+            transformMode={transformMode}
+            showBoundingBoxes={showBoundingBoxes}
+            snapEnabled={snapEnabled}
+            snapThreshold={snapThreshold}
+            objectBoundingBoxes={objectBoundingBoxes}
+            getOtherBoundingBoxes={() => getOtherBoundingBoxes(object.id)}
+            isLocked={objectIsLocked}
+          />
+        );
+      })}
+    </>
+  );
+}
+
+function TriggerObject({
+  object,
+  isSelected,
+  onClick,
+  onUpdate,
+  transformMode,
+  showBoundingBoxes,
+  snapEnabled,
+  snapThreshold,
+  objectBoundingBoxes,
+  getOtherBoundingBoxes,
+  isLocked,
+}: {
+  object: SceneObject;
+  isSelected: boolean;
+  onClick: () => void;
+  onUpdate: (id: string, updates: Partial<SceneObject>) => void;
+  transformMode: TransformMode;
+  showBoundingBoxes: boolean;
+  snapEnabled: boolean;
+  snapThreshold: number;
+  objectBoundingBoxes: React.RefObject<Map<string, Box3>>;
+  getOtherBoundingBoxes: () => Box3[];
+  isLocked: boolean;
+}) {
+  const meshRef = useRef<THREE.Mesh>(null);
+  const boundingBoxRef = useRef<THREE.Box3Helper>(null);
+  const [boundingBox, setBoundingBox] = useState<Box3 | null>(null);
+
+  // Update bounding box on each frame when visible and store it in the ref map
+  useFrame(() => {
+    if (meshRef.current && boundingBox) {
+      boundingBox.setFromObject(meshRef.current);
+
+      // Store the bounding box in the scene-level map
+      if (objectBoundingBoxes.current) {
+        objectBoundingBoxes.current.set(object.id, boundingBox);
+      }
+
+      // Apply snapping while dragging if enabled and object is selected
+      if (snapEnabled && isSelected && transformMode === "translate") {
+        trySnap();
+      }
+    }
+  });
+
+  // Try to snap the current object to other objects' bounding boxes
+  const trySnap = () => {
+    if (!meshRef.current || !boundingBox) return;
+
+    const otherBoxes = getOtherBoundingBoxes();
+    if (otherBoxes.length === 0) return;
+
+    const currentBox = boundingBox.clone();
+    const currentPosition = meshRef.current.position.clone();
+    let snapApplied = false;
+
+    // Extract min and max points for current box
+    const currentMin = currentBox.min;
+    const currentMax = currentBox.max;
+
+    // For each other box, check if we should snap to it
+    for (const otherBox of otherBoxes) {
+      const otherMin = otherBox.min;
+      const otherMax = otherBox.max;
+
+      // Check each axis (x, y, z) for potential snapping
+      const axes = [0, 1, 2]; // x, y, z
+
+      for (const axis of axes) {
+        // Skip Y axis if groundLevel is true
+        if (axis === 1 && object.groundLevel) continue;
+
+        // Check if right side of current box is close to left side of other box
+        if (Math.abs(currentMax.getComponent(axis) - otherMin.getComponent(axis)) <= snapThreshold) {
+          // Snap right side to left side
+          const snapOffset = otherMin.getComponent(axis) - currentMax.getComponent(axis);
+          currentPosition.setComponent(axis, currentPosition.getComponent(axis) + snapOffset);
+          snapApplied = true;
+          break;
+        }
+
+        // Check if left side of current box is close to right side of other box
+        if (Math.abs(currentMin.getComponent(axis) - otherMax.getComponent(axis)) <= snapThreshold) {
+          // Snap left side to right side
+          const snapOffset = otherMax.getComponent(axis) - currentMin.getComponent(axis);
+          currentPosition.setComponent(axis, currentPosition.getComponent(axis) + snapOffset);
+          snapApplied = true;
+          break;
+        }
+      }
+
+      if (snapApplied) break; // Exit after first snap is applied
+    }
+
+    // If we snapped, update the model position
+    if (snapApplied) {
+      meshRef.current.position.copy(currentPosition);
+      if (object.groundLevel) {
+        meshRef.current.position.setY(0); // Ensure Y=0 for ground level objects
+      }
+    }
+  };
+
+  // Calculate initial bounding box when mesh is ready
+  useEffect(() => {
+    if (meshRef.current) {
+      const box = new Box3().setFromObject(meshRef.current);
+      setBoundingBox(box);
+
+      // Initialize the box in the ref map
+      if (objectBoundingBoxes.current) {
+        objectBoundingBoxes.current.set(object.id, box);
+      }
+    }
+
+    // Cleanup when component unmounts
+    return () => {
+      if (objectBoundingBoxes.current) {
+        objectBoundingBoxes.current.delete(object.id);
+      }
+    };
+  }, [meshRef.current, object.id, objectBoundingBoxes]);
+
+  // Trigger position update after transformation with snapping
+  const handleTransform = () => {
+    if (meshRef.current) {
+      let position = meshRef.current.position.toArray() as [number, number, number];
+
+      // Apply final snap when releasing the control
+      if (snapEnabled && showBoundingBoxes) {
+        trySnap();
+        // Update position after snapping
+        position = meshRef.current.position.toArray() as [number, number, number];
+      }
+
+      // Apply grid snapping
+      if (object.snapToGrid) {
+        position = [
+          Math.round(position[0] * 2) / 2,
+          position[1],
+          Math.round(position[2] * 2) / 2,
+        ];
+
+        // Update the actual model position to show the snap
+        meshRef.current.position.x = position[0];
+        meshRef.current.position.z = position[2];
+      }
+
+      // Enforce groundLevel constraint
+      if (object.groundLevel) {
+        position = [position[0], 0, position[2]];
+        // Force the y position to 0 in the actual object
+        meshRef.current.position.setY(0);
+      }
+
+      const rotation = [
+        meshRef.current.rotation.x,
+        meshRef.current.rotation.y,
+        meshRef.current.rotation.z,
+      ] as [number, number, number];
+      const scale = meshRef.current.scale.toArray() as [number, number, number];
+
+      onUpdate(object.id, { position, rotation, scale });
+    }
+  };
+
+  // Calculate the actual position, enforcing groundLevel if needed
+  const actualPosition: [number, number, number] = object.groundLevel
+    ? [object.position[0], 0, object.position[2]]
+    : object.position;
+
+  return (
+    <>
+      <mesh
+        ref={meshRef}
+        position={actualPosition}
+        rotation={object.rotation}
+        scale={object.scale}
+        onClick={(e) => {
+          e.stopPropagation();
+          onClick();
+        }}
+      >
+        <boxGeometry args={[1, 1, 1]} />
+        <meshStandardMaterial
+          color={object.color}
+          transparent={true}
+          opacity={0.5}
         />
-      ))}
+      </mesh>
+
+      {showBoundingBoxes && boundingBox && (
+        <primitive 
+          object={new THREE.Box3Helper(boundingBox, isLocked ? 0xff0000 : 0x00ff00)} 
+        />
+      )}
+
+      {isSelected && !isLocked && meshRef.current && (
+        <TransformControls
+          object={meshRef.current}
+          mode={transformMode}
+          onMouseUp={handleTransform}
+          showY={!(object.groundLevel && transformMode === "translate")}
+        />
+      )}
+    </>
+  );
+}
+
+function LightObject({
+  object,
+  isSelected,
+  onClick,
+  onUpdate,
+  transformMode,
+  showBoundingBoxes,
+  snapEnabled,
+  snapThreshold,
+  objectBoundingBoxes,
+  getOtherBoundingBoxes,
+  isLocked,
+}: {
+  object: SceneObject;
+  isSelected: boolean;
+  onClick: () => void;
+  onUpdate: (id: string, updates: Partial<SceneObject>) => void;
+  transformMode: TransformMode;
+  showBoundingBoxes: boolean;
+  snapEnabled: boolean;
+  snapThreshold: number;
+  objectBoundingBoxes: React.RefObject<Map<string, Box3>>;
+  getOtherBoundingBoxes: () => Box3[];
+  isLocked: boolean;
+}) {
+  const meshRef = useRef<THREE.Mesh>(null);
+  const boundingBoxRef = useRef<THREE.Box3Helper>(null);
+  const [boundingBox, setBoundingBox] = useState<Box3 | null>(null);
+
+  // Update bounding box on each frame when visible and store it in the ref map
+  useFrame(() => {
+    if (meshRef.current && boundingBox) {
+      boundingBox.setFromObject(meshRef.current);
+
+      // Store the bounding box in the scene-level map
+      if (objectBoundingBoxes.current) {
+        objectBoundingBoxes.current.set(object.id, boundingBox);
+      }
+
+      // Apply snapping while dragging if enabled and object is selected
+      if (snapEnabled && isSelected && transformMode === "translate") {
+        trySnap();
+      }
+    }
+  });
+
+  // Try to snap the current object to other objects' bounding boxes
+  const trySnap = () => {
+    if (!meshRef.current || !boundingBox) return;
+
+    const otherBoxes = getOtherBoundingBoxes();
+    if (otherBoxes.length === 0) return;
+
+    const currentBox = boundingBox.clone();
+    const currentPosition = meshRef.current.position.clone();
+    let snapApplied = false;
+
+    // Extract min and max points for current box
+    const currentMin = currentBox.min;
+    const currentMax = currentBox.max;
+
+    // For each other box, check if we should snap to it
+    for (const otherBox of otherBoxes) {
+      const otherMin = otherBox.min;
+      const otherMax = otherBox.max;
+
+      // Check each axis (x, y, z) for potential snapping
+      const axes = [0, 1, 2]; // x, y, z
+
+      for (const axis of axes) {
+        // Skip Y axis if groundLevel is true
+        if (axis === 1 && object.groundLevel) continue;
+
+        // Check if right side of current box is close to left side of other box
+        if (Math.abs(currentMax.getComponent(axis) - otherMin.getComponent(axis)) <= snapThreshold) {
+          // Snap right side to left side
+          const snapOffset = otherMin.getComponent(axis) - currentMax.getComponent(axis);
+          currentPosition.setComponent(axis, currentPosition.getComponent(axis) + snapOffset);
+          snapApplied = true;
+          break;
+        }
+
+        // Check if left side of current box is close to right side of other box
+        if (Math.abs(currentMin.getComponent(axis) - otherMax.getComponent(axis)) <= snapThreshold) {
+          // Snap left side to right side
+          const snapOffset = otherMax.getComponent(axis) - currentMin.getComponent(axis);
+          currentPosition.setComponent(axis, currentPosition.getComponent(axis) + snapOffset);
+          snapApplied = true;
+          break;
+        }
+      }
+
+      if (snapApplied) break; // Exit after first snap is applied
+    }
+
+    // If we snapped, update the model position
+    if (snapApplied) {
+      meshRef.current.position.copy(currentPosition);
+      if (object.groundLevel) {
+        meshRef.current.position.setY(0); // Ensure Y=0 for ground level objects
+      }
+    }
+  };
+
+  // Calculate initial bounding box when mesh is ready
+  useEffect(() => {
+    if (meshRef.current) {
+      const box = new Box3().setFromObject(meshRef.current);
+      setBoundingBox(box);
+
+      // Initialize the box in the ref map
+      if (objectBoundingBoxes.current) {
+        objectBoundingBoxes.current.set(object.id, box);
+      }
+    }
+
+    // Cleanup when component unmounts
+    return () => {
+      if (objectBoundingBoxes.current) {
+        objectBoundingBoxes.current.delete(object.id);
+      }
+    };
+  }, [meshRef.current, object.id, objectBoundingBoxes]);
+
+  // Trigger position update after transformation with snapping
+  const handleTransform = () => {
+    if (meshRef.current) {
+      let position = meshRef.current.position.toArray() as [number, number, number];
+
+      // Apply final snap when releasing the control
+      if (snapEnabled && showBoundingBoxes) {
+        trySnap();
+        // Update position after snapping
+        position = meshRef.current.position.toArray() as [number, number, number];
+      }
+
+      // Apply grid snapping
+      if (object.snapToGrid) {
+        position = [
+          Math.round(position[0] * 2) / 2,
+          position[1],
+          Math.round(position[2] * 2) / 2,
+        ];
+
+        // Update the actual model position to show the snap
+        meshRef.current.position.x = position[0];
+        meshRef.current.position.z = position[2];
+      }
+
+      // Enforce groundLevel constraint
+      if (object.groundLevel) {
+        position = [position[0], 0, position[2]];
+        // Force the y position to 0 in the actual object
+        meshRef.current.position.setY(0);
+      }
+
+      const rotation = [
+        meshRef.current.rotation.x,
+        meshRef.current.rotation.y,
+        meshRef.current.rotation.z,
+      ] as [number, number, number];
+      const scale = meshRef.current.scale.toArray() as [number, number, number];
+
+      onUpdate(object.id, { position, rotation, scale });
+    }
+  };
+
+  return (
+    <>
+      <directionalLight
+        position={object.position}
+        rotation={object.rotation}
+        intensity={15}
+        castShadow
+        shadow-mapSize-width={2048}
+        shadow-mapSize-height={2048}
+      />
+      <mesh
+        ref={meshRef}
+        position={object.position}
+        rotation={object.rotation}
+        scale={object.scale}
+        onClick={(e) => {
+          e.stopPropagation();
+          onClick();
+        }}
+      >
+        <sphereGeometry args={[0.2, 8, 8]} />
+        <meshBasicMaterial color={object.color} />
+      </mesh>
+
+      {/* Light direction indicator */}
+      <group position={object.position} rotation={object.rotation}>
+        <line>
+          <bufferGeometry>
+            <bufferAttribute
+              attach="attributes-position"
+              args={[new Float32Array([0, 0, 0, 0, 0, -5]), 3]}
+            />
+          </bufferGeometry>
+          <lineBasicMaterial color={object.color} linewidth={2} />
+        </line>
+        {/* Arrow head */}
+        <mesh position={[0, 0, -5]} rotation={[Math.PI/2, 0, 0]}>
+          <coneGeometry args={[0.2, 0.4, 8]} />
+          <meshBasicMaterial color={object.color} />
+        </mesh>
+      </group>
+
+      {showBoundingBoxes && boundingBox && (
+        <primitive 
+          object={new THREE.Box3Helper(boundingBox, isLocked ? 0xff0000 : 0x00ff00)} 
+        />
+      )}
+
+      {isSelected && !isLocked && meshRef.current && (
+        <TransformControls
+          object={meshRef.current}
+          mode={transformMode}
+          onMouseUp={handleTransform}
+          showY={!(object.groundLevel && transformMode === "translate")}
+        />
+      )}
     </>
   );
 }
@@ -695,6 +1327,7 @@ function ModelObject({
   snapThreshold,
   objectBoundingBoxes,
   getOtherBoundingBoxes,
+  isLocked,
 }: {
   object: SceneObject;
   isSelected: boolean;
@@ -706,8 +1339,9 @@ function ModelObject({
   snapThreshold: number;
   objectBoundingBoxes: React.RefObject<Map<string, Box3>>;
   getOtherBoundingBoxes: () => Box3[];
+  isLocked: boolean;
 }) {
-  const { scene } = useGLTF(object.modelPath || "/models/model.glb");
+  const { scene } = useGLTF(object.modelPath || "/models/model2.glb");
   const modelRef = useRef<THREE.Group>(null);
   const boundingBoxRef = useRef<THREE.Box3Helper>(null);
   const [isModelReady, setIsModelReady] = useState(false);
@@ -941,10 +1575,12 @@ function ModelObject({
       </group>
 
       {showBoundingBoxes && boundingBox && (
-        <primitive object={new THREE.Box3Helper(boundingBox, 0x00ff00)} />
+        <primitive 
+          object={new THREE.Box3Helper(boundingBox, isLocked ? 0xff0000 : 0x00ff00)} 
+        />
       )}
 
-      {isSelected && isModelReady && modelRef.current && (
+      {isSelected && !isLocked && isModelReady && modelRef.current && (
         <TransformControls
           object={modelRef.current}
           mode={transformMode}
@@ -963,6 +1599,10 @@ function ObjectProperties({
   object: SceneObject;
   onUpdate: (updates: Partial<SceneObject>) => void;
 }) {
+  const handleNameChange = (value: string) => {
+    onUpdate({ name: value });
+  };
+
   const handlePositionChange = (axis: number, value: number) => {
     // If groundLevel is true and axis is Y (1), ignore the change
     if (object.groundLevel && axis === 1) return;
@@ -1025,6 +1665,16 @@ function ObjectProperties({
 
   return (
     <div className="space-y-4 w-full min-w-0">
+      <div>
+        <h4 className="font-medium mb-2">Name</h4>
+        <input
+          type="text"
+          value={object.name}
+          onChange={(e) => handleNameChange(e.target.value)}
+          className="w-full bg-gray-800 text-white px-2 py-1 rounded"
+        />
+      </div>
+
       <div>
         <h4 className="font-medium mb-2">Position</h4>
         <div className="grid grid-cols-3 gap-2">
