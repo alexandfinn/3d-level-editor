@@ -482,13 +482,28 @@ export function LevelEditor() {
         e.preventDefault(); // Prevent browser's default behavior
         duplicateObject(selectedObjectId);
       }
+
+      // Rotate clockwise with R
+      if (e.key === "r" && selectedObjectId) {
+        e.preventDefault();
+        const selectedObject = objects.find(obj => obj.id === selectedObjectId);
+        if (selectedObject) {
+          // Add 90 degrees (PI/2 radians) to current Y rotation
+          const newRotation: [number, number, number] = [
+            selectedObject.rotation[0],
+            selectedObject.rotation[1] + Math.PI/2,
+            selectedObject.rotation[2]
+          ];
+          updateObject(selectedObjectId, { rotation: newRotation });
+        }
+      }
     };
 
     window.addEventListener("keydown", handleKeyDown);
     return () => {
       window.removeEventListener("keydown", handleKeyDown);
     };
-  }, [selectedObjectId, deleteObject, duplicateObject]);
+  }, [selectedObjectId, deleteObject, duplicateObject, objects, updateObject]);
 
   const resetScene = () => {
     if (
